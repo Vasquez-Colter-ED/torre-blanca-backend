@@ -12,5 +12,6 @@ public class UsuarioResponse {
     private String email;
     private String telefono;
     private String estado;
-    private List<String> roles;
+    private List<RolInfo> roles;
+    private List<PermisoInfo> permisosExtra;
 }

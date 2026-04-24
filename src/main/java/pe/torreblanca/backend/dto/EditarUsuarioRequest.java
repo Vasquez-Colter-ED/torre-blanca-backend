@@ -9,4 +9,5 @@ public class EditarUsuarioRequest {
     private String dni;
     private String telefono;
     private String email;
+    private String nuevaPassword; // solo directivos pueden cambiar contraseña ajena
 }
