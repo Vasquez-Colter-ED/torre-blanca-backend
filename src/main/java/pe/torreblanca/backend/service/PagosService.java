@@ -29,8 +29,7 @@ public class PagosService {
 
     public List<DepartamentoDetalleResponse> listarDepartamentos() {
         return departamentoRepository.findAllByOrderByNumeroAsc().stream()
-                .map(this::toDepartamentoDetalle)
-                .collect(Collectors.toList());
+                .map(this::toDepartamentoDetalle).collect(Collectors.toList());
     }
 
     public MensajeResponse asignarPropietario(AsignarDepartamentoRequest request, Integer adminId) {
@@ -39,10 +38,8 @@ public class PagosService {
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
         Departamento departamento = departamentoRepository.findById(request.getDepartamentoId())
                 .orElseThrow(() -> new RuntimeException("Departamento no encontrado"));
-
         propietarioDeptoRepository.findActivoByDepartamentoId(departamento.getId())
                 .ifPresent(pd -> { pd.setEstado(false); propietarioDeptoRepository.save(pd); });
-
         PropietarioDepartamento nueva = new PropietarioDepartamento();
         nueva.setUsuario(usuario); nueva.setDepartamento(departamento);
         nueva.setFechaInicio(LocalDate.now()); nueva.setEstado(true);
@@ -58,7 +55,6 @@ public class PagosService {
                 .orElseThrow(() -> new RuntimeException("Departamento no encontrado"));
         Usuario propietario = usuarioRepository.findById(request.getPropietarioId())
                 .orElseThrow(() -> new RuntimeException("Propietario no encontrado"));
-
         InquilinoDepartamento inq = new InquilinoDepartamento();
         inq.setUsuario(usuario); inq.setDepartamento(departamento);
         inq.setPropietario(propietario); inq.setFechaInicio(LocalDate.now()); inq.setEstado(true);
@@ -70,8 +66,7 @@ public class PagosService {
         verificarDirectivo(adminId);
         InquilinoDepartamento inq = inquilinoDeptoRepository.findById(inquilinoDeptoId)
                 .orElseThrow(() -> new RuntimeException("Registro no encontrado"));
-        inq.setEstado(false);
-        inq.setFechaFin(LocalDate.now());
+        inq.setEstado(false); inq.setFechaFin(LocalDate.now());
         inquilinoDeptoRepository.save(inq);
         return new MensajeResponse("Inquilino removido del departamento", true);
     }
@@ -82,7 +77,6 @@ public class PagosService {
         verificarDirectivo(adminId);
         if (configuracionRepository.existsByMesAndAnio(request.getMes(), request.getAnio()))
             throw new RuntimeException("Ya existe configuración para " + request.getMes() + "/" + request.getAnio());
-
         ConfiguracionMantenimiento config = new ConfiguracionMantenimiento();
         config.setMes(request.getMes()); config.setAnio(request.getAnio());
         config.setCostoPorM2(request.getCostoPorM2());
@@ -90,10 +84,8 @@ public class PagosService {
         config.setObservaciones(request.getObservaciones());
         config.setCreadoPor(adminId);
         ConfiguracionMantenimiento savedConfig = configuracionRepository.save(config);
-
         List<Departamento> departamentos = departamentoRepository.findAll();
         LocalDate vencimiento = LocalDate.of(request.getAnio(), request.getMes(), 28);
-
         for (Departamento depto : departamentos) {
             BigDecimal monto = depto.getMetrosCuadrados().multiply(request.getCostoPorM2());
             CuotaMantenimiento cuota = new CuotaMantenimiento();
@@ -102,7 +94,6 @@ public class PagosService {
             cuota.setFechaVencimiento(vencimiento);
             cuotaRepository.save(cuota);
         }
-
         return new MensajeResponse("Configuración creada y " + departamentos.size() + " cuotas generadas", true);
     }
 
@@ -110,14 +101,11 @@ public class PagosService {
         verificarDirectivo(adminId);
         ConfiguracionMantenimiento config = configuracionRepository.findById(configId)
                 .orElseThrow(() -> new RuntimeException("Configuración no encontrada"));
-
         if (request.getCostoPorM2() != null) {
             config.setCostoPorM2(request.getCostoPorM2());
-            // Recalcular cuotas con el nuevo costo por m2
             List<CuotaMantenimiento> cuotas = cuotaRepository.findByConfiguracionId(configId);
             for (CuotaMantenimiento cuota : cuotas) {
-                BigDecimal nuevoMonto = cuota.getDepartamento().getMetrosCuadrados().multiply(request.getCostoPorM2());
-                cuota.setMontoCalculado(nuevoMonto);
+                cuota.setMontoCalculado(cuota.getDepartamento().getMetrosCuadrados().multiply(request.getCostoPorM2()));
                 cuotaRepository.save(cuota);
             }
         }
@@ -145,25 +133,19 @@ public class PagosService {
     public ResumenMesResponse obtenerResumenMes(Integer mes, Integer anio) {
         ConfiguracionMantenimiento config = configuracionRepository.findByMesAndAnio(mes, anio)
                 .orElseThrow(() -> new RuntimeException("No hay configuración para " + mes + "/" + anio));
-
         List<CuotaMantenimiento> cuotas = cuotaRepository.findByConfiguracionId(config.getId());
-
         BigDecimal totalEsperado  = cuotas.stream().map(CuotaMantenimiento::getMontoCalculado).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal totalRecaudado = cuotas.stream().filter(c -> c.getEstado() == EstadoCuota.PAGADO).map(CuotaMantenimiento::getMontoCalculado).reduce(BigDecimal.ZERO, BigDecimal::add);
         long pagados    = cuotas.stream().filter(c -> c.getEstado() == EstadoCuota.PAGADO).count();
         long pendientes = cuotas.stream().filter(c -> c.getEstado() == EstadoCuota.PENDIENTE).count();
         long vencidos   = cuotas.stream().filter(c -> c.getEstado() == EstadoCuota.VENCIDO).count();
-
         ResumenMesResponse resumen = new ResumenMesResponse();
         resumen.setMes(mes); resumen.setAnio(anio);
         resumen.setCostoPorM2(config.getCostoPorM2());
-        resumen.setTotalEsperado(totalEsperado);
-        resumen.setTotalRecaudado(totalRecaudado);
+        resumen.setTotalEsperado(totalEsperado); resumen.setTotalRecaudado(totalRecaudado);
         resumen.setTotalPendiente(totalEsperado.subtract(totalRecaudado));
         resumen.setTotalDepartamentos(cuotas.size());
-        resumen.setPagados((int) pagados);
-        resumen.setPendientes((int) pendientes);
-        resumen.setVencidos((int) vencidos);
+        resumen.setPagados((int) pagados); resumen.setPendientes((int) pendientes); resumen.setVencidos((int) vencidos);
         resumen.setCuotas(cuotas.stream().map(this::toCuotaDetalle).collect(Collectors.toList()));
         return resumen;
     }
@@ -173,17 +155,13 @@ public class PagosService {
     public List<CuotaDetalleResponse> obtenerMisCuotas(Integer usuarioId) {
         List<Integer> deptoIds = obtenerDeptosDeUsuario(usuarioId);
         List<CuotaMantenimiento> cuotas = new ArrayList<>();
-        for (Integer deptoId : deptoIds) {
-            cuotas.addAll(cuotaRepository.findByDepartamentoId(deptoId));
-        }
+        for (Integer deptoId : deptoIds) cuotas.addAll(cuotaRepository.findByDepartamentoId(deptoId));
         return cuotas.stream()
                 .sorted((a, b) -> {
-                    int cmpAnio = b.getConfiguracion().getAnio().compareTo(a.getConfiguracion().getAnio());
-                    if (cmpAnio != 0) return cmpAnio;
-                    return b.getConfiguracion().getMes().compareTo(a.getConfiguracion().getMes());
+                    int c = b.getConfiguracion().getAnio().compareTo(a.getConfiguracion().getAnio());
+                    return c != 0 ? c : b.getConfiguracion().getMes().compareTo(a.getConfiguracion().getMes());
                 })
-                .map(this::toCuotaDetalle)
-                .collect(Collectors.toList());
+                .map(this::toCuotaDetalle).collect(Collectors.toList());
     }
 
     // ── Registrar pago ────────────────────────────────────────────────
@@ -198,10 +176,8 @@ public class PagosService {
             if (!misDeptos.contains(cuota.getDepartamento().getId()))
                 throw new RuntimeException("No puedes registrar el pago de otro departamento");
         }
-
         Usuario pagador = usuarioRepository.findById(pagadorId)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
-
         PagoMantenimiento pago = new PagoMantenimiento();
         pago.setCuota(cuota); pago.setPagador(pagador); pago.setMonto(request.getMonto());
         pago.setFechaPago(LocalDateTime.now());
@@ -223,7 +199,6 @@ public class PagosService {
                 .orElseThrow(() -> new RuntimeException("Pago no encontrado"));
         Usuario admin = usuarioRepository.findById(adminId)
                 .orElseThrow(() -> new RuntimeException("Admin no encontrado"));
-
         if ("APROBAR".equals(request.getAccion())) {
             pago.setEstado(EstadoPago.VERIFICADO);
             pago.getCuota().setEstado(EstadoCuota.PAGADO);
@@ -233,9 +208,7 @@ public class PagosService {
         } else {
             throw new RuntimeException("Acción inválida. Use APROBAR o RECHAZAR");
         }
-
-        pago.setVerificadoPor(admin);
-        pago.setFechaVerificacion(LocalDateTime.now());
+        pago.setVerificadoPor(admin); pago.setFechaVerificacion(LocalDateTime.now());
         if (request.getObservaciones() != null) pago.setObservaciones(request.getObservaciones());
         pagoRepository.save(pago);
         return new MensajeResponse("Pago " + ("APROBAR".equals(request.getAccion()) ? "aprobado" : "rechazado") + " correctamente", true);
@@ -250,14 +223,12 @@ public class PagosService {
         return configuracionRepository.findAll();
     }
 
-    // ── Helpers privados ──────────────────────────────────────────────
+    // ── Helpers ───────────────────────────────────────────────────────
 
     private List<Integer> obtenerDeptosDeUsuario(Integer usuarioId) {
         List<Integer> ids = new ArrayList<>();
-        propietarioDeptoRepository.findActivosByUsuarioId(usuarioId)
-                .forEach(pd -> ids.add(pd.getDepartamento().getId()));
-        inquilinoDeptoRepository.findActivosByUsuarioId(usuarioId)
-                .forEach(id -> ids.add(id.getDepartamento().getId()));
+        propietarioDeptoRepository.findActivosByUsuarioId(usuarioId).forEach(pd -> ids.add(pd.getDepartamento().getId()));
+        inquilinoDeptoRepository.findActivosByUsuarioId(usuarioId).forEach(id -> ids.add(id.getDepartamento().getId()));
         return ids;
     }
 
@@ -276,8 +247,7 @@ public class PagosService {
     }
 
     private void verificarDirectivo(Integer usuarioId) {
-        if (!esDirectivo(usuarioId))
-            throw new RuntimeException("No tienes permisos para esta acción");
+        if (!esDirectivo(usuarioId)) throw new RuntimeException("No tienes permisos para esta acción");
     }
 
     private DepartamentoDetalleResponse toDepartamentoDetalle(Departamento d) {
@@ -285,22 +255,16 @@ public class PagosService {
         r.setId(d.getId()); r.setNumero(d.getNumero());
         r.setPiso(d.getPiso()); r.setMetrosCuadrados(d.getMetrosCuadrados());
         r.setEstado(d.getEstado().name());
-
         propietarioDeptoRepository.findActivoByDepartamentoId(d.getId()).ifPresent(pd -> {
             r.setPropietarioId(pd.getUsuario().getId());
             r.setPropietarioNombre(pd.getUsuario().getNombre() + " " + pd.getUsuario().getApellido());
             r.setPropietarioEmail(pd.getUsuario().getEmail());
         });
-
         r.setInquilinos(inquilinoDeptoRepository.findActivosByDepartamentoId(d.getId()).stream()
-                .map(i -> {
-                    InquilinoInfo ii = new InquilinoInfo();
-                    ii.setAsignacionId(i.getId());
+                .map(i -> { InquilinoInfo ii = new InquilinoInfo(); ii.setAsignacionId(i.getId());
                     ii.setUsuarioId(i.getUsuario().getId());
                     ii.setNombre(i.getUsuario().getNombre() + " " + i.getUsuario().getApellido());
-                    ii.setEmail(i.getUsuario().getEmail());
-                    return ii;
-                })
+                    ii.setEmail(i.getUsuario().getEmail()); return ii; })
                 .collect(Collectors.toList()));
         return r;
     }
@@ -329,6 +293,9 @@ public class PagosService {
         r.setFechaPago(p.getFechaPago()); r.setFechaVerificacion(p.getFechaVerificacion());
         if (p.getVerificadoPor() != null)
             r.setVerificadoPorNombre(p.getVerificadoPor().getNombre() + " " + p.getVerificadoPor().getApellido());
+        // Info del departamento
+        r.setNumeroDepartamento(p.getCuota().getDepartamento().getNumero());
+        r.setPiso(p.getCuota().getDepartamento().getPiso());
         return r;
     }
 }

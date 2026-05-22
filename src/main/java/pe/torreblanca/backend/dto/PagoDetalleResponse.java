@@ -17,4 +17,7 @@ public class PagoDetalleResponse {
     private LocalDateTime fechaPago;
     private LocalDateTime fechaVerificacion;
     private String verificadoPorNombre;
+    // Info del departamento
+    private String numeroDepartamento;
+    private Integer piso;
 }
