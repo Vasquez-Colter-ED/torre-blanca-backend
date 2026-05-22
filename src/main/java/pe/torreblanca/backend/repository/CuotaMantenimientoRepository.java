@@ -16,8 +16,9 @@ public interface CuotaMantenimientoRepository extends JpaRepository<CuotaManteni
     @Query("SELECT c FROM CuotaMantenimiento c WHERE c.configuracion.mes = :mes AND c.configuracion.anio = :anio")
     List<CuotaMantenimiento> findByMesAndAnio(Integer mes, Integer anio);
 
-    @Query("SELECT c FROM CuotaMantenimiento c WHERE c.responsablePago.id = :usuarioId ORDER BY c.configuracion.anio DESC, c.configuracion.mes DESC")
-    List<CuotaMantenimiento> findByResponsablePagoId(Integer usuarioId);
+    // Cuotas por departamento (para mostrar al residente)
+    @Query("SELECT c FROM CuotaMantenimiento c WHERE c.departamento.id = :departamentoId ORDER BY c.configuracion.anio DESC, c.configuracion.mes DESC")
+    List<CuotaMantenimiento> findByDepartamentoId(Integer departamentoId);
 
     Optional<CuotaMantenimiento> findByDepartamentoIdAndConfiguracionId(Integer departamentoId, Integer configuracionId);
 

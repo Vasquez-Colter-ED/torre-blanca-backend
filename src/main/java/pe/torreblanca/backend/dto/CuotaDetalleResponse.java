@@ -12,7 +12,7 @@ public class CuotaDetalleResponse {
     private BigDecimal metrosCuadrados;
     private BigDecimal montoCalculado;
     private String estadoCuota;
-    private String responsableNombre;
-    private String responsableEmail;
+    // Todos los usuarios del depto
+    private List<String> residentesNombres;
     private List<PagoDetalleResponse> pagos;
 }

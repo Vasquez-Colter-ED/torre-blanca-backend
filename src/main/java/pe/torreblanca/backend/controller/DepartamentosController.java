@@ -1,8 +1,6 @@
 package pe.torreblanca.backend.controller;
 
-import pe.torreblanca.backend.dto.AsignarDepartamentoRequest;
-import pe.torreblanca.backend.dto.MensajeResponse;
-import pe.torreblanca.backend.entity.Departamento;
+import pe.torreblanca.backend.dto.*;
 import pe.torreblanca.backend.repository.UsuarioRepository;
 import pe.torreblanca.backend.security.JwtUtil;
 import pe.torreblanca.backend.service.PagosService;
@@ -27,14 +25,28 @@ public class DepartamentosController {
     }
 
     @GetMapping
-    public ResponseEntity<List<Departamento>> listar() {
+    public ResponseEntity<List<DepartamentoDetalleResponse>> listar() {
         return ResponseEntity.ok(pagosService.listarDepartamentos());
     }
 
-    @PostMapping("/asignar")
-    public ResponseEntity<?> asignar(@RequestBody AsignarDepartamentoRequest request,
-                                     @RequestHeader("Authorization") String auth) {
-        try { return ResponseEntity.ok(pagosService.asignarUsuarioADepartamento(request, getSolicitanteId(auth))); }
+    @PostMapping("/asignar-propietario")
+    public ResponseEntity<?> asignarPropietario(@RequestBody AsignarDepartamentoRequest request,
+                                                @RequestHeader("Authorization") String auth) {
+        try { return ResponseEntity.ok(pagosService.asignarPropietario(request, getSolicitanteId(auth))); }
+        catch (Exception e) { return ResponseEntity.badRequest().body(e.getMessage()); }
+    }
+
+    @PostMapping("/asignar-inquilino")
+    public ResponseEntity<?> asignarInquilino(@RequestBody AsignarInquilinoRequest request,
+                                              @RequestHeader("Authorization") String auth) {
+        try { return ResponseEntity.ok(pagosService.asignarInquilino(request, getSolicitanteId(auth))); }
+        catch (Exception e) { return ResponseEntity.badRequest().body(e.getMessage()); }
+    }
+
+    @DeleteMapping("/inquilino/{id}")
+    public ResponseEntity<?> quitarInquilino(@PathVariable Integer id,
+                                             @RequestHeader("Authorization") String auth) {
+        try { return ResponseEntity.ok(pagosService.quitarInquilino(id, getSolicitanteId(auth))); }
         catch (Exception e) { return ResponseEntity.badRequest().body(e.getMessage()); }
     }
 }
