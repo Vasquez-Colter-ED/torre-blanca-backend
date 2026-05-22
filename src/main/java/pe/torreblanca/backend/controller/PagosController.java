@@ -8,7 +8,6 @@ import pe.torreblanca.backend.service.PagosService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/pagos")
@@ -31,8 +30,6 @@ public class PagosController {
                 .stream().anyMatch(ur -> ur.getRol().getEsDirectivo());
     }
 
-    // ── Configuración mensual ─────────────────────────────────────────
-
     @GetMapping("/configuraciones")
     public ResponseEntity<?> listarConfiguraciones() {
         return ResponseEntity.ok(pagosService.listarConfiguraciones());
@@ -45,24 +42,32 @@ public class PagosController {
         catch (Exception e) { return ResponseEntity.badRequest().body(e.getMessage()); }
     }
 
-    // ── Resumen del mes ───────────────────────────────────────────────
-
-    @GetMapping("/resumen/{anio}/{mes}")
-    public ResponseEntity<?> resumenMes(@PathVariable Integer anio,
-                                        @PathVariable Integer mes) {
-        try { return ResponseEntity.ok(pagosService.obtenerResumenMes(mes, anio)); }
+    @PutMapping("/configuraciones/{id}")
+    public ResponseEntity<?> editarConfiguracion(@PathVariable Integer id,
+                                                 @RequestBody EditarConfiguracionRequest request,
+                                                 @RequestHeader("Authorization") String auth) {
+        try { return ResponseEntity.ok(pagosService.editarConfiguracion(id, request, getSolicitanteId(auth))); }
         catch (Exception e) { return ResponseEntity.badRequest().body(e.getMessage()); }
     }
 
-    // ── Mis cuotas (residente) ────────────────────────────────────────
+    @DeleteMapping("/configuraciones/{id}")
+    public ResponseEntity<?> eliminarConfiguracion(@PathVariable Integer id,
+                                                   @RequestHeader("Authorization") String auth) {
+        try { return ResponseEntity.ok(pagosService.eliminarConfiguracion(id, getSolicitanteId(auth))); }
+        catch (Exception e) { return ResponseEntity.badRequest().body(e.getMessage()); }
+    }
+
+    @GetMapping("/resumen/{anio}/{mes}")
+    public ResponseEntity<?> resumenMes(@PathVariable Integer anio, @PathVariable Integer mes) {
+        try { return ResponseEntity.ok(pagosService.obtenerResumenMes(mes, anio)); }
+        catch (Exception e) { return ResponseEntity.badRequest().body(e.getMessage()); }
+    }
 
     @GetMapping("/mis-cuotas")
     public ResponseEntity<?> misCuotas(@RequestHeader("Authorization") String auth) {
         try { return ResponseEntity.ok(pagosService.obtenerMisCuotas(getSolicitanteId(auth))); }
         catch (Exception e) { return ResponseEntity.badRequest().body(e.getMessage()); }
     }
-
-    // ── Registrar pago ────────────────────────────────────────────────
 
     @PostMapping("/registrar")
     public ResponseEntity<?> registrarPago(@RequestBody RegistrarPagoRequest request,
@@ -73,14 +78,10 @@ public class PagosController {
         } catch (Exception e) { return ResponseEntity.badRequest().body(e.getMessage()); }
     }
 
-    // ── Pagos pendientes de verificación ─────────────────────────────
-
     @GetMapping("/pendientes")
     public ResponseEntity<?> pendientes() {
         return ResponseEntity.ok(pagosService.obtenerPendientesVerificacion());
     }
-
-    // ── Verificar pago ────────────────────────────────────────────────
 
     @PatchMapping("/{pagoId}/verificar")
     public ResponseEntity<?> verificarPago(@PathVariable Integer pagoId,

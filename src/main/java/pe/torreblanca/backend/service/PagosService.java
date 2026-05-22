@@ -40,17 +40,13 @@ public class PagosService {
         Departamento departamento = departamentoRepository.findById(request.getDepartamentoId())
                 .orElseThrow(() -> new RuntimeException("Departamento no encontrado"));
 
-        // Desactivar propietario anterior
         propietarioDeptoRepository.findActivoByDepartamentoId(departamento.getId())
                 .ifPresent(pd -> { pd.setEstado(false); propietarioDeptoRepository.save(pd); });
 
         PropietarioDepartamento nueva = new PropietarioDepartamento();
-        nueva.setUsuario(usuario);
-        nueva.setDepartamento(departamento);
-        nueva.setFechaInicio(LocalDate.now());
-        nueva.setEstado(true);
+        nueva.setUsuario(usuario); nueva.setDepartamento(departamento);
+        nueva.setFechaInicio(LocalDate.now()); nueva.setEstado(true);
         propietarioDeptoRepository.save(nueva);
-
         return new MensajeResponse("Propietario asignado al departamento " + departamento.getNumero(), true);
     }
 
@@ -64,13 +60,9 @@ public class PagosService {
                 .orElseThrow(() -> new RuntimeException("Propietario no encontrado"));
 
         InquilinoDepartamento inq = new InquilinoDepartamento();
-        inq.setUsuario(usuario);
-        inq.setDepartamento(departamento);
-        inq.setPropietario(propietario);
-        inq.setFechaInicio(LocalDate.now());
-        inq.setEstado(true);
+        inq.setUsuario(usuario); inq.setDepartamento(departamento);
+        inq.setPropietario(propietario); inq.setFechaInicio(LocalDate.now()); inq.setEstado(true);
         inquilinoDeptoRepository.save(inq);
-
         return new MensajeResponse("Inquilino asignado al departamento " + departamento.getNumero(), true);
     }
 
@@ -92,8 +84,7 @@ public class PagosService {
             throw new RuntimeException("Ya existe configuración para " + request.getMes() + "/" + request.getAnio());
 
         ConfiguracionMantenimiento config = new ConfiguracionMantenimiento();
-        config.setMes(request.getMes());
-        config.setAnio(request.getAnio());
+        config.setMes(request.getMes()); config.setAnio(request.getAnio());
         config.setCostoPorM2(request.getCostoPorM2());
         config.setTotalGastosEstimados(request.getTotalGastosEstimados());
         config.setObservaciones(request.getObservaciones());
@@ -106,15 +97,47 @@ public class PagosService {
         for (Departamento depto : departamentos) {
             BigDecimal monto = depto.getMetrosCuadrados().multiply(request.getCostoPorM2());
             CuotaMantenimiento cuota = new CuotaMantenimiento();
-            cuota.setDepartamento(depto);
-            cuota.setConfiguracion(savedConfig);
-            cuota.setMontoCalculado(monto);
-            cuota.setEstado(EstadoCuota.PENDIENTE);
+            cuota.setDepartamento(depto); cuota.setConfiguracion(savedConfig);
+            cuota.setMontoCalculado(monto); cuota.setEstado(EstadoCuota.PENDIENTE);
             cuota.setFechaVencimiento(vencimiento);
             cuotaRepository.save(cuota);
         }
 
-        return new MensajeResponse("Configuración creada y " + departamentos.size() + " cuotas generadas para " + request.getMes() + "/" + request.getAnio(), true);
+        return new MensajeResponse("Configuración creada y " + departamentos.size() + " cuotas generadas", true);
+    }
+
+    public MensajeResponse editarConfiguracion(Integer configId, EditarConfiguracionRequest request, Integer adminId) {
+        verificarDirectivo(adminId);
+        ConfiguracionMantenimiento config = configuracionRepository.findById(configId)
+                .orElseThrow(() -> new RuntimeException("Configuración no encontrada"));
+
+        if (request.getCostoPorM2() != null) {
+            config.setCostoPorM2(request.getCostoPorM2());
+            // Recalcular cuotas con el nuevo costo por m2
+            List<CuotaMantenimiento> cuotas = cuotaRepository.findByConfiguracionId(configId);
+            for (CuotaMantenimiento cuota : cuotas) {
+                BigDecimal nuevoMonto = cuota.getDepartamento().getMetrosCuadrados().multiply(request.getCostoPorM2());
+                cuota.setMontoCalculado(nuevoMonto);
+                cuotaRepository.save(cuota);
+            }
+        }
+        if (request.getTotalGastosEstimados() != null) config.setTotalGastosEstimados(request.getTotalGastosEstimados());
+        if (request.getObservaciones() != null) config.setObservaciones(request.getObservaciones());
+        configuracionRepository.save(config);
+        return new MensajeResponse("Configuración actualizada correctamente", true);
+    }
+
+    public MensajeResponse eliminarConfiguracion(Integer configId, Integer adminId) {
+        verificarDirectivo(adminId);
+        ConfiguracionMantenimiento config = configuracionRepository.findById(configId)
+                .orElseThrow(() -> new RuntimeException("Configuración no encontrada"));
+        List<CuotaMantenimiento> cuotas = cuotaRepository.findByConfiguracionId(configId);
+        for (CuotaMantenimiento cuota : cuotas) {
+            pagoRepository.findByCuotaId(cuota.getId()).forEach(pagoRepository::delete);
+            cuotaRepository.delete(cuota);
+        }
+        configuracionRepository.delete(config);
+        return new MensajeResponse("Configuración y cuotas eliminadas correctamente", true);
     }
 
     // ── Resumen del mes ───────────────────────────────────────────────
@@ -145,7 +168,7 @@ public class PagosService {
         return resumen;
     }
 
-    // ── Cuotas del usuario según sus deptos ───────────────────────────
+    // ── Cuotas del usuario ────────────────────────────────────────────
 
     public List<CuotaDetalleResponse> obtenerMisCuotas(Integer usuarioId) {
         List<Integer> deptoIds = obtenerDeptosDeUsuario(usuarioId);
@@ -168,11 +191,8 @@ public class PagosService {
     public MensajeResponse registrarPago(RegistrarPagoRequest request, Integer pagadorId, boolean esDirectivo) {
         CuotaMantenimiento cuota = cuotaRepository.findById(request.getCuotaId())
                 .orElseThrow(() -> new RuntimeException("Cuota no encontrada"));
-
         if (cuota.getEstado() == EstadoCuota.PAGADO)
             throw new RuntimeException("Esta cuota ya está pagada");
-
-        // Si no es directivo, verificar que pertenece al depto
         if (!esDirectivo) {
             List<Integer> misDeptos = obtenerDeptosDeUsuario(pagadorId);
             if (!misDeptos.contains(cuota.getDepartamento().getId()))
@@ -183,9 +203,7 @@ public class PagosService {
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
 
         PagoMantenimiento pago = new PagoMantenimiento();
-        pago.setCuota(cuota);
-        pago.setPagador(pagador);
-        pago.setMonto(request.getMonto());
+        pago.setCuota(cuota); pago.setPagador(pagador); pago.setMonto(request.getMonto());
         pago.setFechaPago(LocalDateTime.now());
         pago.setMetodoPago(MetodoPago.valueOf(request.getMetodoPago()));
         pago.setNumeroOperacion(request.getNumeroOperacion());
@@ -194,8 +212,6 @@ public class PagosService {
         pago.setEstado(EstadoPago.PENDIENTE_VERIFICACION);
         pago.setRegistradoPor(esDirectivo ? "DIRECTIVO" : "RESIDENTE");
         pagoRepository.save(pago);
-
-        // Cambiar estado de cuota a EN_VERIFICACION (sigue como PENDIENTE hasta que aprueben)
         return new MensajeResponse("Pago registrado. Pendiente de verificación por la directiva.", true);
     }
 
@@ -277,10 +293,15 @@ public class PagosService {
         });
 
         r.setInquilinos(inquilinoDeptoRepository.findActivosByDepartamentoId(d.getId()).stream()
-                .map(i -> { InquilinoInfo ii = new InquilinoInfo(); ii.setUsuarioId(i.getUsuario().getId());
+                .map(i -> {
+                    InquilinoInfo ii = new InquilinoInfo();
+                    ii.setAsignacionId(i.getId());
+                    ii.setUsuarioId(i.getUsuario().getId());
                     ii.setNombre(i.getUsuario().getNombre() + " " + i.getUsuario().getApellido());
-                    ii.setEmail(i.getUsuario().getEmail()); return ii; })
-                .collect(java.util.stream.Collectors.toList()));
+                    ii.setEmail(i.getUsuario().getEmail());
+                    return ii;
+                })
+                .collect(Collectors.toList()));
         return r;
     }
 
@@ -294,7 +315,7 @@ public class PagosService {
         r.setEstadoCuota(c.getEstado().name());
         r.setResidentesNombres(obtenerResidentesDeDepto(c.getDepartamento().getId()));
         r.setPagos(pagoRepository.findByCuotaId(c.getId()).stream()
-                .map(this::toPagoDetalle).collect(java.util.stream.Collectors.toList()));
+                .map(this::toPagoDetalle).collect(Collectors.toList()));
         return r;
     }
 
