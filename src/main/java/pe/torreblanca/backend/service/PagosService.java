@@ -24,6 +24,7 @@ public class PagosService {
     @Autowired private PropietarioDepartamentoRepository propietarioDeptoRepository;
     @Autowired private InquilinoDepartamentoRepository inquilinoDeptoRepository;
     @Autowired private UsuarioRolRepository usuarioRolRepository;
+    @Autowired private BoletasService boletasService;
 
     // ── Departamentos ─────────────────────────────────────────────────
 
@@ -191,7 +192,7 @@ public class PagosService {
         return new MensajeResponse("Pago registrado. Pendiente de verificación por la directiva.", true);
     }
 
-    // ── Verificar pago ────────────────────────────────────────────────
+    // ── Verificar pago + generar boleta automáticamente ───────────────
 
     public MensajeResponse verificarPago(Integer pagoId, VerificarPagoRequest request, Integer adminId) {
         verificarDirectivo(adminId);
@@ -199,19 +200,28 @@ public class PagosService {
                 .orElseThrow(() -> new RuntimeException("Pago no encontrado"));
         Usuario admin = usuarioRepository.findById(adminId)
                 .orElseThrow(() -> new RuntimeException("Admin no encontrado"));
+
         if ("APROBAR".equals(request.getAccion())) {
             pago.setEstado(EstadoPago.VERIFICADO);
             pago.getCuota().setEstado(EstadoCuota.PAGADO);
             cuotaRepository.save(pago.getCuota());
+            pago.setVerificadoPor(admin);
+            pago.setFechaVerificacion(LocalDateTime.now());
+            if (request.getObservaciones() != null) pago.setObservaciones(request.getObservaciones());
+            pagoRepository.save(pago);
+            // ✅ Generar boleta automáticamente
+            boletasService.generarBoleta(pago, admin);
+            return new MensajeResponse("Pago aprobado y boleta generada automáticamente", true);
         } else if ("RECHAZAR".equals(request.getAccion())) {
             pago.setEstado(EstadoPago.RECHAZADO);
+            pago.setVerificadoPor(admin);
+            pago.setFechaVerificacion(LocalDateTime.now());
+            if (request.getObservaciones() != null) pago.setObservaciones(request.getObservaciones());
+            pagoRepository.save(pago);
+            return new MensajeResponse("Pago rechazado correctamente", true);
         } else {
             throw new RuntimeException("Acción inválida. Use APROBAR o RECHAZAR");
         }
-        pago.setVerificadoPor(admin); pago.setFechaVerificacion(LocalDateTime.now());
-        if (request.getObservaciones() != null) pago.setObservaciones(request.getObservaciones());
-        pagoRepository.save(pago);
-        return new MensajeResponse("Pago " + ("APROBAR".equals(request.getAccion()) ? "aprobado" : "rechazado") + " correctamente", true);
     }
 
     public List<PagoDetalleResponse> obtenerPendientesVerificacion() {
@@ -293,7 +303,6 @@ public class PagosService {
         r.setFechaPago(p.getFechaPago()); r.setFechaVerificacion(p.getFechaVerificacion());
         if (p.getVerificadoPor() != null)
             r.setVerificadoPorNombre(p.getVerificadoPor().getNombre() + " " + p.getVerificadoPor().getApellido());
-        // Info del departamento
         r.setNumeroDepartamento(p.getCuota().getDepartamento().getNumero());
         r.setPiso(p.getCuota().getDepartamento().getPiso());
         return r;
