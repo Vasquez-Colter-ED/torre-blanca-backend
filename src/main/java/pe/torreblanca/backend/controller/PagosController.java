@@ -1,7 +1,6 @@
 package pe.torreblanca.backend.controller;
 
 import pe.torreblanca.backend.dto.*;
-import pe.torreblanca.backend.entity.*;
 import pe.torreblanca.backend.repository.UsuarioRepository;
 import pe.torreblanca.backend.repository.UsuarioRolRepository;
 import pe.torreblanca.backend.security.JwtUtil;
@@ -30,20 +29,6 @@ public class PagosController {
     private boolean esDirectivo(Integer usuarioId) {
         return usuarioRolRepository.findRolesActivosByUsuarioId(usuarioId)
                 .stream().anyMatch(ur -> ur.getRol().getEsDirectivo());
-    }
-
-    // ── Departamentos ─────────────────────────────────────────────────
-
-    @GetMapping("/departamentos")
-    public ResponseEntity<List<Departamento>> listarDepartamentos() {
-        return ResponseEntity.ok(pagosService.listarDepartamentos());
-    }
-
-    @PostMapping("/departamentos/asignar")
-    public ResponseEntity<?> asignarUsuario(@RequestBody AsignarDepartamentoRequest request,
-                                            @RequestHeader("Authorization") String auth) {
-        try { return ResponseEntity.ok(pagosService.asignarUsuarioADepartamento(request, getSolicitanteId(auth))); }
-        catch (Exception e) { return ResponseEntity.badRequest().body(e.getMessage()); }
     }
 
     // ── Configuración mensual ─────────────────────────────────────────
