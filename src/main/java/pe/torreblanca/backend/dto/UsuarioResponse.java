@@ -14,4 +14,6 @@ public class UsuarioResponse {
     private String estado;
     private List<RolInfo> roles;
     private List<PermisoInfo> permisosExtra;
+    // Departamentos asignados
+    private List<DepartamentoInfo> departamentos;
 }

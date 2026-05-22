@@ -11,4 +11,5 @@ public class CrearUsuarioRequest {
     private String telefono;
     private String password;
     private Integer rolId;
+    private Integer departamentoId; // opcional al crear
 }
