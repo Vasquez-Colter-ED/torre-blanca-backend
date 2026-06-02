@@ -26,8 +26,6 @@ public class PagosService {
     @Autowired private UsuarioRolRepository usuarioRolRepository;
     @Autowired private BoletasService boletasService;
 
-    // ── Departamentos ─────────────────────────────────────────────────
-
     public List<DepartamentoDetalleResponse> listarDepartamentos() {
         return departamentoRepository.findAllByOrderByNumeroAsc().stream()
                 .map(this::toDepartamentoDetalle).collect(Collectors.toList());
@@ -71,8 +69,6 @@ public class PagosService {
         inquilinoDeptoRepository.save(inq);
         return new MensajeResponse("Inquilino removido del departamento", true);
     }
-
-    // ── Configuración mensual ─────────────────────────────────────────
 
     public MensajeResponse configurarMesYGenerarCuotas(ConfigurarMesRequest request, Integer adminId) {
         verificarDirectivo(adminId);
@@ -129,8 +125,6 @@ public class PagosService {
         return new MensajeResponse("Configuración y cuotas eliminadas correctamente", true);
     }
 
-    // ── Resumen del mes ───────────────────────────────────────────────
-
     public ResumenMesResponse obtenerResumenMes(Integer mes, Integer anio) {
         ConfiguracionMantenimiento config = configuracionRepository.findByMesAndAnio(mes, anio)
                 .orElseThrow(() -> new RuntimeException("No hay configuración para " + mes + "/" + anio));
@@ -151,8 +145,6 @@ public class PagosService {
         return resumen;
     }
 
-    // ── Cuotas del usuario ────────────────────────────────────────────
-
     public List<CuotaDetalleResponse> obtenerMisCuotas(Integer usuarioId) {
         List<Integer> deptoIds = obtenerDeptosDeUsuario(usuarioId);
         List<CuotaMantenimiento> cuotas = new ArrayList<>();
@@ -166,19 +158,32 @@ public class PagosService {
     }
 
     // ── Registrar pago ────────────────────────────────────────────────
-
-    public MensajeResponse registrarPago(RegistrarPagoRequest request, Integer pagadorId, boolean esDirectivo) {
+    // Si el directivo especifica pagadorId, se usa ese usuario como pagador real.
+    // Si no, se usa el usuario logueado (residente pagando su propio depto).
+    public MensajeResponse registrarPago(RegistrarPagoRequest request, Integer solicitanteId, boolean esDirectivo) {
         CuotaMantenimiento cuota = cuotaRepository.findById(request.getCuotaId())
                 .orElseThrow(() -> new RuntimeException("Cuota no encontrada"));
         if (cuota.getEstado() == EstadoCuota.PAGADO)
             throw new RuntimeException("Esta cuota ya está pagada");
-        if (!esDirectivo) {
-            List<Integer> misDeptos = obtenerDeptosDeUsuario(pagadorId);
-            if (!misDeptos.contains(cuota.getDepartamento().getId()))
-                throw new RuntimeException("No puedes registrar el pago de otro departamento");
+
+        // Determinar quién es el pagador real
+        Integer pagadorRealId;
+        if (esDirectivo && request.getPagadorId() != null) {
+            // Directivo registra a nombre de otro usuario
+            pagadorRealId = request.getPagadorId();
+        } else {
+            // Residente paga por sí mismo — verificar que sea su depto
+            pagadorRealId = solicitanteId;
+            if (!esDirectivo) {
+                List<Integer> misDeptos = obtenerDeptosDeUsuario(solicitanteId);
+                if (!misDeptos.contains(cuota.getDepartamento().getId()))
+                    throw new RuntimeException("No puedes registrar el pago de otro departamento");
+            }
         }
-        Usuario pagador = usuarioRepository.findById(pagadorId)
-                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+
+        Usuario pagador = usuarioRepository.findById(pagadorRealId)
+                .orElseThrow(() -> new RuntimeException("Pagador no encontrado"));
+
         PagoMantenimiento pago = new PagoMantenimiento();
         pago.setCuota(cuota); pago.setPagador(pagador); pago.setMonto(request.getMonto());
         pago.setFechaPago(LocalDateTime.now());
@@ -189,10 +194,10 @@ public class PagosService {
         pago.setEstado(EstadoPago.PENDIENTE_VERIFICACION);
         pago.setRegistradoPor(esDirectivo ? "DIRECTIVO" : "RESIDENTE");
         pagoRepository.save(pago);
-        return new MensajeResponse("Pago registrado. Pendiente de verificación por la directiva.", true);
-    }
 
-    // ── Verificar pago + generar boleta automáticamente ───────────────
+        String nombre = pagador.getNombre() + " " + pagador.getApellido();
+        return new MensajeResponse("Pago registrado a nombre de " + nombre + ". Pendiente de verificación.", true);
+    }
 
     public MensajeResponse verificarPago(Integer pagoId, VerificarPagoRequest request, Integer adminId) {
         verificarDirectivo(adminId);
@@ -200,22 +205,18 @@ public class PagosService {
                 .orElseThrow(() -> new RuntimeException("Pago no encontrado"));
         Usuario admin = usuarioRepository.findById(adminId)
                 .orElseThrow(() -> new RuntimeException("Admin no encontrado"));
-
         if ("APROBAR".equals(request.getAccion())) {
             pago.setEstado(EstadoPago.VERIFICADO);
             pago.getCuota().setEstado(EstadoCuota.PAGADO);
             cuotaRepository.save(pago.getCuota());
-            pago.setVerificadoPor(admin);
-            pago.setFechaVerificacion(LocalDateTime.now());
+            pago.setVerificadoPor(admin); pago.setFechaVerificacion(LocalDateTime.now());
             if (request.getObservaciones() != null) pago.setObservaciones(request.getObservaciones());
             pagoRepository.save(pago);
-            // ✅ Generar boleta automáticamente
             boletasService.generarBoleta(pago, admin);
             return new MensajeResponse("Pago aprobado y boleta generada automáticamente", true);
         } else if ("RECHAZAR".equals(request.getAccion())) {
             pago.setEstado(EstadoPago.RECHAZADO);
-            pago.setVerificadoPor(admin);
-            pago.setFechaVerificacion(LocalDateTime.now());
+            pago.setVerificadoPor(admin); pago.setFechaVerificacion(LocalDateTime.now());
             if (request.getObservaciones() != null) pago.setObservaciones(request.getObservaciones());
             pagoRepository.save(pago);
             return new MensajeResponse("Pago rechazado correctamente", true);
@@ -232,8 +233,6 @@ public class PagosService {
     public List<ConfiguracionMantenimiento> listarConfiguraciones() {
         return configuracionRepository.findAll();
     }
-
-    // ── Helpers ───────────────────────────────────────────────────────
 
     private List<Integer> obtenerDeptosDeUsuario(Integer usuarioId) {
         List<Integer> ids = new ArrayList<>();

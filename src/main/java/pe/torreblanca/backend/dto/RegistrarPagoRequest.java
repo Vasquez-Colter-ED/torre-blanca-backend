@@ -11,4 +11,6 @@ public class RegistrarPagoRequest {
     private String numeroOperacion;
     private String voucherUrl;
     private String observaciones;
+    // Solo directivos pueden especificar un pagador distinto al logueado
+    private Integer pagadorId;
 }
