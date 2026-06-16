@@ -3,6 +3,7 @@ package pe.torreblanca.backend.service;
 import pe.torreblanca.backend.dto.*;
 import pe.torreblanca.backend.entity.*;
 import pe.torreblanca.backend.repository.*;
+import pe.torreblanca.backend.util.ValidacionUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -38,6 +39,14 @@ public class UsuarioService {
 
     public UsuarioResponse crear(CrearUsuarioRequest request, Integer adminId) {
         verificarDirectivo(adminId, "crear usuarios");
+
+        // Validaciones de formato — sin caracteres especiales
+        ValidacionUtil.validarNombre(request.getNombre(), "El nombre");
+        ValidacionUtil.validarNombre(request.getApellido(), "El apellido");
+        ValidacionUtil.validarDni(request.getDni());
+        ValidacionUtil.validarEmail(request.getEmail());
+        ValidacionUtil.validarTelefono(request.getTelefono());
+
         if (usuarioRepository.existsByEmail(request.getEmail()))
             throw new RuntimeException("El email ya está registrado");
         if (request.getDni() != null && usuarioRepository.existsByDni(request.getDni()))
@@ -55,11 +64,9 @@ public class UsuarioService {
 
         if (request.getRolId() != null) asignarRol(guardado.getId(), request.getRolId(), adminId);
 
-        // Asignar departamento si se especificó
         if (request.getDepartamentoId() != null) {
             Departamento depto = departamentoRepository.findById(request.getDepartamentoId()).orElse(null);
             if (depto != null) {
-                // Desactivar propietario anterior
                 propietarioDeptoRepository.findActivoByDepartamentoId(depto.getId())
                         .ifPresent(pd -> { pd.setEstado(false); propietarioDeptoRepository.save(pd); });
                 PropietarioDepartamento pd = new PropietarioDepartamento();
@@ -80,15 +87,29 @@ public class UsuarioService {
         Usuario usuario = usuarioRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
 
-        if (request.getNombre()   != null) usuario.setNombre(request.getNombre());
-        if (request.getApellido() != null) usuario.setApellido(request.getApellido());
-        if (request.getTelefono() != null) usuario.setTelefono(request.getTelefono());
-        if (request.getDni()      != null) usuario.setDni(request.getDni());
+        if (request.getNombre() != null) {
+            ValidacionUtil.validarNombre(request.getNombre(), "El nombre");
+            usuario.setNombre(request.getNombre());
+        }
+        if (request.getApellido() != null) {
+            ValidacionUtil.validarNombre(request.getApellido(), "El apellido");
+            usuario.setApellido(request.getApellido());
+        }
+        if (request.getTelefono() != null) {
+            ValidacionUtil.validarTelefono(request.getTelefono());
+            usuario.setTelefono(request.getTelefono());
+        }
+        if (request.getDni() != null) {
+            ValidacionUtil.validarDni(request.getDni());
+            usuario.setDni(request.getDni());
+        }
         if (request.getEmail() != null && !request.getEmail().equals(usuario.getEmail())) {
+            ValidacionUtil.validarEmail(request.getEmail());
             if (usuarioRepository.existsByEmail(request.getEmail()))
                 throw new RuntimeException("El email ya está en uso");
             usuario.setEmail(request.getEmail());
         }
+        // La contraseña NO se valida contra caracteres especiales — se permiten para mayor seguridad
         if (request.getNuevaPassword() != null && !request.getNuevaPassword().isBlank()) {
             if (!esAdmin && !id.equals(solicitanteId))
                 throw new RuntimeException("No puedes cambiar la contraseña de otro usuario");
@@ -211,7 +232,6 @@ public class UsuarioService {
                 .map(up -> new PermisoInfo(up.getId(), up.getModulo().getNombre(), up.getPermiso().getNombre()))
                 .collect(Collectors.toList()));
 
-        // Departamentos asignados
         List<DepartamentoInfo> deptos = new ArrayList<>();
         propietarioDeptoRepository.findActivosByUsuarioId(u.getId()).forEach(pd -> {
             DepartamentoInfo di = new DepartamentoInfo();

@@ -3,6 +3,7 @@ package pe.torreblanca.backend.service;
 import pe.torreblanca.backend.dto.*;
 import pe.torreblanca.backend.entity.*;
 import pe.torreblanca.backend.repository.*;
+import pe.torreblanca.backend.util.ValidacionUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -39,6 +40,9 @@ public class GastosService {
 
     public GastoResponse crear(GastoRequest request, Integer adminId) {
         verificarDirectivo(adminId);
+
+        ValidacionUtil.validarTextoLibreRequerido(request.getDescripcion(), "La descripción");
+
         CategoriaGasto categoria = categoriaRepository.findById(request.getCategoriaId())
                 .orElseThrow(() -> new RuntimeException("Categoría no encontrada"));
         Usuario admin = usuarioRepository.findById(adminId)
@@ -61,6 +65,9 @@ public class GastosService {
 
     public GastoResponse editar(Integer id, GastoRequest request, Integer adminId) {
         verificarDirectivo(adminId);
+
+        ValidacionUtil.validarTextoLibreRequerido(request.getDescripcion(), "La descripción");
+
         Gasto gasto = gastoRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Gasto no encontrado"));
         CategoriaGasto categoria = categoriaRepository.findById(request.getCategoriaId())

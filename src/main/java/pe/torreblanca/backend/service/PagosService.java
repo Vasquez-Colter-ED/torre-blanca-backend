@@ -3,6 +3,7 @@ package pe.torreblanca.backend.service;
 import pe.torreblanca.backend.dto.*;
 import pe.torreblanca.backend.entity.*;
 import pe.torreblanca.backend.repository.*;
+import pe.torreblanca.backend.util.ValidacionUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -16,6 +17,8 @@ import java.util.stream.Collectors;
 @Service
 public class PagosService {
 
+    private static final int MAX_INQUILINOS_POR_DEPTO = 5;
+
     @Autowired private DepartamentoRepository departamentoRepository;
     @Autowired private ConfiguracionMantenimientoRepository configuracionRepository;
     @Autowired private CuotaMantenimientoRepository cuotaRepository;
@@ -25,6 +28,8 @@ public class PagosService {
     @Autowired private InquilinoDepartamentoRepository inquilinoDeptoRepository;
     @Autowired private UsuarioRolRepository usuarioRolRepository;
     @Autowired private BoletasService boletasService;
+
+    // ── Departamentos ─────────────────────────────────────────────────
 
     public List<DepartamentoDetalleResponse> listarDepartamentos() {
         return departamentoRepository.findAllByOrderByNumeroAsc().stream()
@@ -54,6 +59,13 @@ public class PagosService {
                 .orElseThrow(() -> new RuntimeException("Departamento no encontrado"));
         Usuario propietario = usuarioRepository.findById(request.getPropietarioId())
                 .orElseThrow(() -> new RuntimeException("Propietario no encontrado"));
+
+        // Límite máximo de inquilinos por departamento
+        long actuales = inquilinoDeptoRepository.findActivosByDepartamentoId(departamento.getId()).size();
+        if (actuales >= MAX_INQUILINOS_POR_DEPTO)
+            throw new RuntimeException("El departamento " + departamento.getNumero() +
+                    " ya alcanzó el máximo de " + MAX_INQUILINOS_POR_DEPTO + " inquilinos permitidos");
+
         InquilinoDepartamento inq = new InquilinoDepartamento();
         inq.setUsuario(usuario); inq.setDepartamento(departamento);
         inq.setPropietario(propietario); inq.setFechaInicio(LocalDate.now()); inq.setEstado(true);
@@ -70,10 +82,40 @@ public class PagosService {
         return new MensajeResponse("Inquilino removido del departamento", true);
     }
 
+    // Lista de residentes de UN departamento específico — usado para el
+    // selector de "quién realizó el pago" cuando un directivo registra
+    // un pago manualmente (efectivo, etc.)
+    public List<ResidenteOption> listarResidentesDeDepto(Integer departamentoId) {
+        List<ResidenteOption> lista = new ArrayList<>();
+
+        propietarioDeptoRepository.findActivoByDepartamentoId(departamentoId).ifPresent(pd -> {
+            ResidenteOption r = new ResidenteOption();
+            r.setId(pd.getUsuario().getId());
+            r.setNombre(pd.getUsuario().getNombre() + " " + pd.getUsuario().getApellido());
+            r.setTipo("PROPIETARIO");
+            lista.add(r);
+        });
+
+        inquilinoDeptoRepository.findActivosByDepartamentoId(departamentoId).forEach(i -> {
+            ResidenteOption r = new ResidenteOption();
+            r.setId(i.getUsuario().getId());
+            r.setNombre(i.getUsuario().getNombre() + " " + i.getUsuario().getApellido());
+            r.setTipo("INQUILINO");
+            lista.add(r);
+        });
+
+        return lista;
+    }
+
+    // ── Configuración mensual ─────────────────────────────────────────
+
     public MensajeResponse configurarMesYGenerarCuotas(ConfigurarMesRequest request, Integer adminId) {
         verificarDirectivo(adminId);
         if (configuracionRepository.existsByMesAndAnio(request.getMes(), request.getAnio()))
             throw new RuntimeException("Ya existe configuración para " + request.getMes() + "/" + request.getAnio());
+
+        ValidacionUtil.validarTextoLibre(request.getObservaciones(), "Las observaciones");
+
         ConfiguracionMantenimiento config = new ConfiguracionMantenimiento();
         config.setMes(request.getMes()); config.setAnio(request.getAnio());
         config.setCostoPorM2(request.getCostoPorM2());
@@ -96,6 +138,9 @@ public class PagosService {
 
     public MensajeResponse editarConfiguracion(Integer configId, EditarConfiguracionRequest request, Integer adminId) {
         verificarDirectivo(adminId);
+
+        ValidacionUtil.validarTextoLibre(request.getObservaciones(), "Las observaciones");
+
         ConfiguracionMantenimiento config = configuracionRepository.findById(configId)
                 .orElseThrow(() -> new RuntimeException("Configuración no encontrada"));
         if (request.getCostoPorM2() != null) {
@@ -125,6 +170,8 @@ public class PagosService {
         return new MensajeResponse("Configuración y cuotas eliminadas correctamente", true);
     }
 
+    // ── Resumen del mes ───────────────────────────────────────────────
+
     public ResumenMesResponse obtenerResumenMes(Integer mes, Integer anio) {
         ConfiguracionMantenimiento config = configuracionRepository.findByMesAndAnio(mes, anio)
                 .orElseThrow(() -> new RuntimeException("No hay configuración para " + mes + "/" + anio));
@@ -145,6 +192,8 @@ public class PagosService {
         return resumen;
     }
 
+    // ── Cuotas del usuario ────────────────────────────────────────────
+
     public List<CuotaDetalleResponse> obtenerMisCuotas(Integer usuarioId) {
         List<Integer> deptoIds = obtenerDeptosDeUsuario(usuarioId);
         List<CuotaMantenimiento> cuotas = new ArrayList<>();
@@ -158,27 +207,28 @@ public class PagosService {
     }
 
     // ── Registrar pago ────────────────────────────────────────────────
-    // Si el directivo especifica pagadorId, se usa ese usuario como pagador real.
-    // Si no, se usa el usuario logueado (residente pagando su propio depto).
+    // Si el solicitante es directivo, DEBE especificar pagadorId (quién
+    // realizó realmente el pago). Ya no hay fallback silencioso al
+    // directivo logueado — eso era la causa del bug de la boleta.
     public MensajeResponse registrarPago(RegistrarPagoRequest request, Integer solicitanteId, boolean esDirectivo) {
         CuotaMantenimiento cuota = cuotaRepository.findById(request.getCuotaId())
                 .orElseThrow(() -> new RuntimeException("Cuota no encontrada"));
         if (cuota.getEstado() == EstadoCuota.PAGADO)
             throw new RuntimeException("Esta cuota ya está pagada");
 
-        // Determinar quién es el pagador real
+        ValidacionUtil.validarTextoLibre(request.getNumeroOperacion(), "El número de operación");
+        ValidacionUtil.validarTextoLibre(request.getObservaciones(), "Las observaciones");
+
         Integer pagadorRealId;
-        if (esDirectivo && request.getPagadorId() != null) {
-            // Directivo registra a nombre de otro usuario
+        if (esDirectivo) {
+            if (request.getPagadorId() == null)
+                throw new RuntimeException("Debes seleccionar quién realizó el pago");
             pagadorRealId = request.getPagadorId();
         } else {
-            // Residente paga por sí mismo — verificar que sea su depto
             pagadorRealId = solicitanteId;
-            if (!esDirectivo) {
-                List<Integer> misDeptos = obtenerDeptosDeUsuario(solicitanteId);
-                if (!misDeptos.contains(cuota.getDepartamento().getId()))
-                    throw new RuntimeException("No puedes registrar el pago de otro departamento");
-            }
+            List<Integer> misDeptos = obtenerDeptosDeUsuario(solicitanteId);
+            if (!misDeptos.contains(cuota.getDepartamento().getId()))
+                throw new RuntimeException("No puedes registrar el pago de otro departamento");
         }
 
         Usuario pagador = usuarioRepository.findById(pagadorRealId)
@@ -205,6 +255,9 @@ public class PagosService {
                 .orElseThrow(() -> new RuntimeException("Pago no encontrado"));
         Usuario admin = usuarioRepository.findById(adminId)
                 .orElseThrow(() -> new RuntimeException("Admin no encontrado"));
+
+        ValidacionUtil.validarTextoLibre(request.getObservaciones(), "Las observaciones");
+
         if ("APROBAR".equals(request.getAccion())) {
             pago.setEstado(EstadoPago.VERIFICADO);
             pago.getCuota().setEstado(EstadoCuota.PAGADO);
@@ -233,6 +286,8 @@ public class PagosService {
     public List<ConfiguracionMantenimiento> listarConfiguraciones() {
         return configuracionRepository.findAll();
     }
+
+    // ── Helpers ───────────────────────────────────────────────────────
 
     private List<Integer> obtenerDeptosDeUsuario(Integer usuarioId) {
         List<Integer> ids = new ArrayList<>();
@@ -281,6 +336,7 @@ public class PagosService {
     private CuotaDetalleResponse toCuotaDetalle(CuotaMantenimiento c) {
         CuotaDetalleResponse r = new CuotaDetalleResponse();
         r.setCuotaId(c.getId());
+        r.setDepartamentoId(c.getDepartamento().getId());
         r.setNumeroDepartamento(c.getDepartamento().getNumero());
         r.setPiso(c.getDepartamento().getPiso());
         r.setMetrosCuadrados(c.getDepartamento().getMetrosCuadrados());

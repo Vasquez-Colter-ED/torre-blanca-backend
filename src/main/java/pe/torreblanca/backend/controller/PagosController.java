@@ -69,6 +69,14 @@ public class PagosController {
         catch (Exception e) { return ResponseEntity.badRequest().body(e.getMessage()); }
     }
 
+    // Lista de residentes de un departamento específico — para el selector
+    // de "quién realizó el pago" cuando el directivo registra manualmente.
+    @GetMapping("/departamento/{id}/residentes")
+    public ResponseEntity<?> residentesDeDepto(@PathVariable Integer id) {
+        try { return ResponseEntity.ok(pagosService.listarResidentesDeDepto(id)); }
+        catch (Exception e) { return ResponseEntity.badRequest().body(e.getMessage()); }
+    }
+
     @PostMapping("/registrar")
     public ResponseEntity<?> registrarPago(@RequestBody RegistrarPagoRequest request,
                                            @RequestHeader("Authorization") String auth) {
