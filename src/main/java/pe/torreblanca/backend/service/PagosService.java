@@ -113,6 +113,10 @@ public class PagosService {
         verificarDirectivo(adminId);
         if (configuracionRepository.existsByMesAndAnio(request.getMes(), request.getAnio()))
             throw new RuntimeException("Ya existe configuración para " + request.getMes() + "/" + request.getAnio());
+        if (request.getCostoPorM2() == null || request.getCostoPorM2().compareTo(BigDecimal.ZERO) <= 0)
+            throw new RuntimeException("El costo por m² debe ser mayor a cero");
+        if (request.getTotalGastosEstimados() != null && request.getTotalGastosEstimados().compareTo(BigDecimal.ZERO) < 0)
+            throw new RuntimeException("El total de gastos estimados no puede ser negativo");
 
         ValidacionUtil.validarTextoLibre(request.getObservaciones(), "Las observaciones");
 
@@ -144,6 +148,8 @@ public class PagosService {
         ConfiguracionMantenimiento config = configuracionRepository.findById(configId)
                 .orElseThrow(() -> new RuntimeException("Configuración no encontrada"));
         if (request.getCostoPorM2() != null) {
+            if (request.getCostoPorM2().compareTo(BigDecimal.ZERO) <= 0)
+                throw new RuntimeException("El costo por m² debe ser mayor a cero");
             config.setCostoPorM2(request.getCostoPorM2());
             List<CuotaMantenimiento> cuotas = cuotaRepository.findByConfiguracionId(configId);
             for (CuotaMantenimiento cuota : cuotas) {
@@ -151,7 +157,11 @@ public class PagosService {
                 cuotaRepository.save(cuota);
             }
         }
-        if (request.getTotalGastosEstimados() != null) config.setTotalGastosEstimados(request.getTotalGastosEstimados());
+        if (request.getTotalGastosEstimados() != null) {
+            if (request.getTotalGastosEstimados().compareTo(BigDecimal.ZERO) < 0)
+                throw new RuntimeException("El total de gastos estimados no puede ser negativo");
+            config.setTotalGastosEstimados(request.getTotalGastosEstimados());
+        }
         if (request.getObservaciones() != null) config.setObservaciones(request.getObservaciones());
         configuracionRepository.save(config);
         return new MensajeResponse("Configuración actualizada correctamente", true);
@@ -215,6 +225,8 @@ public class PagosService {
                 .orElseThrow(() -> new RuntimeException("Cuota no encontrada"));
         if (cuota.getEstado() == EstadoCuota.PAGADO)
             throw new RuntimeException("Esta cuota ya está pagada");
+        if (request.getMonto() == null || request.getMonto().compareTo(BigDecimal.ZERO) <= 0)
+            throw new RuntimeException("El monto debe ser mayor a cero");
 
         ValidacionUtil.validarTextoLibre(request.getNumeroOperacion(), "El número de operación");
         ValidacionUtil.validarTextoLibre(request.getObservaciones(), "Las observaciones");

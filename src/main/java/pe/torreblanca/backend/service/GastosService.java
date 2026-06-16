@@ -42,6 +42,8 @@ public class GastosService {
         verificarDirectivo(adminId);
 
         ValidacionUtil.validarTextoLibreRequerido(request.getDescripcion(), "La descripción");
+        if (request.getMonto() == null || request.getMonto().compareTo(BigDecimal.ZERO) <= 0)
+            throw new RuntimeException("El monto debe ser mayor a cero");
 
         CategoriaGasto categoria = categoriaRepository.findById(request.getCategoriaId())
                 .orElseThrow(() -> new RuntimeException("Categoría no encontrada"));
@@ -67,6 +69,8 @@ public class GastosService {
         verificarDirectivo(adminId);
 
         ValidacionUtil.validarTextoLibreRequerido(request.getDescripcion(), "La descripción");
+        if (request.getMonto() == null || request.getMonto().compareTo(BigDecimal.ZERO) <= 0)
+            throw new RuntimeException("El monto debe ser mayor a cero");
 
         Gasto gasto = gastoRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Gasto no encontrado"));
