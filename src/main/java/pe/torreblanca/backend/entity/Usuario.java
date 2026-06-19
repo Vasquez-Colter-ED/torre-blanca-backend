@@ -31,6 +31,13 @@ public class Usuario {
     @Enumerated(EnumType.STRING)
     private EstadoUsuario estado = EstadoUsuario.ACTIVO;
 
+    // Identificador de sesión activa (jti del JWT).
+    // Se actualiza en cada login y se verifica en cada petición.
+    // Si alguien inicia sesión desde otro dispositivo, este campo cambia
+    // y el token anterior queda invalidado automáticamente (1 sesión por cuenta).
+    @Column(name = "session_token")
+    private String sessionToken;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
