@@ -1,20 +1,18 @@
 package pe.torreblanca.backend.service;
 
-import pe.torreblanca.backend.dto.LoginRequest;
-import pe.torreblanca.backend.dto.LoginResponse;
-import pe.torreblanca.backend.entity.EstadoUsuario;
-import pe.torreblanca.backend.entity.Usuario;
-import pe.torreblanca.backend.entity.UsuarioRol;
-import pe.torreblanca.backend.repository.UsuarioRepository;
-import pe.torreblanca.backend.repository.UsuarioRolRepository;
+import pe.torreblanca.backend.dto.*;
+import pe.torreblanca.backend.entity.*;
+import pe.torreblanca.backend.repository.*;
 import pe.torreblanca.backend.security.JwtUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
@@ -24,15 +22,11 @@ public class AuthService {
     @Autowired private UsuarioRolRepository usuarioRolRepository;
     @Autowired private JwtUtil jwtUtil;
     @Autowired private PasswordEncoder passwordEncoder;
+    @Autowired private EmailService emailService;
 
     // ── Rate limiter ──────────────────────────────────────────────────
-    // Guarda en memoria cuántos intentos fallidos ha tenido cada email
-    // y cuándo fue el último. Simple, sin dependencias externas.
-    // Regla: máximo 5 intentos fallidos en una ventana de 10 minutos.
-    // Al pasar ese límite, se bloquea el intento aunque la contraseña
-    // sea correcta, hasta que pasen los 10 minutos.
-    private static final int  MAX_INTENTOS    = 5;
-    private static final long VENTANA_MS      = 10 * 60 * 1000L; // 10 minutos
+    private static final int  MAX_INTENTOS = 5;
+    private static final long VENTANA_MS   = 10 * 60 * 1000L;
 
     private record IntentosFallidos(int cantidad, Instant desde) {}
     private final Map<String, IntentosFallidos> intentos = new ConcurrentHashMap<>();
@@ -40,15 +34,11 @@ public class AuthService {
     private void verificarRateLimit(String email) {
         IntentosFallidos actual = intentos.get(email);
         if (actual == null) return;
-
         long transcurrido = Instant.now().toEpochMilli() - actual.desde().toEpochMilli();
-        if (transcurrido > VENTANA_MS) {
-            intentos.remove(email); return; // ventana expiró, limpia el contador
-        }
+        if (transcurrido > VENTANA_MS) { intentos.remove(email); return; }
         if (actual.cantidad() >= MAX_INTENTOS) {
             long restanteMin = (VENTANA_MS - transcurrido) / 60000;
-            throw new RuntimeException(
-                "Demasiados intentos fallidos. Espera " + (restanteMin + 1) + " minuto(s) antes de intentar de nuevo.");
+            throw new RuntimeException("Demasiados intentos fallidos. Espera " + (restanteMin + 1) + " minuto(s) antes de intentar de nuevo.");
         }
     }
 
@@ -60,46 +50,33 @@ public class AuthService {
         });
     }
 
-    private void limpiarIntentos(String email) {
-        intentos.remove(email);
-    }
+    private void limpiarIntentos(String email) { intentos.remove(email); }
 
     // ── Login ─────────────────────────────────────────────────────────
     public LoginResponse login(LoginRequest request) {
-
-        // 1. Rate limiter — antes de tocar la BD
         verificarRateLimit(request.getEmail());
 
-        // 2. Buscar usuario
         Usuario usuario = usuarioRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> {
                     registrarIntentoFallido(request.getEmail());
                     return new RuntimeException("Credenciales incorrectas");
                 });
 
-        // 3. Verificar estado
         if (usuario.getEstado() != EstadoUsuario.ACTIVO)
             throw new RuntimeException("Tu cuenta está inactiva o suspendida");
 
-        // 4. Verificar contraseña
         if (!passwordEncoder.matches(request.getPassword(), usuario.getPasswordHash())) {
             registrarIntentoFallido(request.getEmail());
             throw new RuntimeException("Credenciales incorrectas");
         }
 
-        // 5. Login exitoso — limpiar intentos fallidos
         limpiarIntentos(request.getEmail());
 
-        // 6. Generar token con jti único de sesión
         String token = jwtUtil.generateToken(usuario.getEmail());
         String jti   = jwtUtil.getJtiFromToken(token);
-
-        // 7. Guardar jti en BD — invalida cualquier sesión anterior
-        //    (1 sesión activa por cuenta)
         usuario.setSessionToken(jti);
         usuarioRepository.save(usuario);
 
-        // 8. Rol principal
         List<UsuarioRol> roles = usuarioRolRepository.findRolesActivosByUsuarioId(usuario.getId());
         String rolPrincipal = roles.stream()
                 .filter(ur -> ur.getRol().getEsDirectivo())
@@ -109,5 +86,85 @@ public class AuthService {
 
         return new LoginResponse(token, usuario.getId(), usuario.getNombre(),
                 usuario.getApellido(), usuario.getEmail(), rolPrincipal);
+    }
+
+    // ── Recuperación de contraseña ────────────────────────────────────
+
+    // Paso 1: genera código de 6 dígitos, lo guarda en BD y envía el email
+    public MensajeResponse recuperarPassword(RecuperarPasswordRequest request) {
+        // Siempre respondemos igual para no revelar si el email existe
+        usuarioRepository.findByEmail(request.getEmail()).ifPresent(usuario -> {
+            if (usuario.getEstado() != EstadoUsuario.ACTIVO) return;
+
+            // Genera código de 6 dígitos
+            String codigo = String.format("%06d", new Random().nextInt(999999));
+
+            // Guarda en BD con expiración de 15 minutos
+            usuario.setResetCode(codigo);
+            usuario.setResetCodeExpires(LocalDateTime.now().plusMinutes(15));
+            usuario.setResetCodeVerificado(false);
+            usuarioRepository.save(usuario);
+
+            // Envía el email con la plantilla HTML
+            emailService.enviarCodigoRecuperacion(
+                usuario.getEmail(),
+                usuario.getNombre(),
+                codigo
+            );
+        });
+
+        return new MensajeResponse(
+            "Si ese correo está registrado, recibirás un código en breve.", true);
+    }
+
+    // Paso 2: verifica que el código sea correcto y no haya expirado
+    public MensajeResponse verificarCodigo(VerificarCodigoRequest request) {
+        Usuario usuario = usuarioRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new RuntimeException("Código inválido o expirado"));
+
+        if (usuario.getResetCode() == null
+                || !usuario.getResetCode().equals(request.getCodigo())) {
+            throw new RuntimeException("El código ingresado no es correcto");
+        }
+
+        if (LocalDateTime.now().isAfter(usuario.getResetCodeExpires())) {
+            throw new RuntimeException("El código expiró. Solicita uno nuevo.");
+        }
+
+        // Marca como verificado para que el paso 3 pueda proceder
+        usuario.setResetCodeVerificado(true);
+        usuarioRepository.save(usuario);
+
+        return new MensajeResponse("Código verificado correctamente", true);
+    }
+
+    // Paso 3: establece la nueva contraseña (solo si el código fue verificado)
+    public MensajeResponse nuevaPassword(NuevaPasswordRequest request) {
+        Usuario usuario = usuarioRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new RuntimeException("Solicitud inválida"));
+
+        if (usuario.getResetCode() == null
+                || !Boolean.TRUE.equals(usuario.getResetCodeVerificado())) {
+            throw new RuntimeException("Debes verificar el código primero");
+        }
+
+        if (LocalDateTime.now().isAfter(usuario.getResetCodeExpires())) {
+            throw new RuntimeException("El código expiró. Solicita uno nuevo.");
+        }
+
+        // Establece la nueva contraseña
+        usuario.setPasswordHash(passwordEncoder.encode(request.getNuevaPassword()));
+
+        // Limpia el código para que no pueda reutilizarse
+        usuario.setResetCode(null);
+        usuario.setResetCodeExpires(null);
+        usuario.setResetCodeVerificado(false);
+
+        // Invalida la sesión activa por seguridad
+        usuario.setSessionToken(null);
+
+        usuarioRepository.save(usuario);
+
+        return new MensajeResponse("Contraseña restablecida correctamente. Ya puedes iniciar sesión.", true);
     }
 }
