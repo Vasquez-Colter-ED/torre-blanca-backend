@@ -24,30 +24,48 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     @Autowired private UserDetailsServiceImpl userDetailsService;
     @Autowired private UsuarioRepository usuarioRepository;
 
+    // Rutas públicas que no necesitan token — el filtro las deja pasar sin validar
+    private static final String[] RUTAS_PUBLICAS = {
+        "/api/auth/login",
+        "/api/auth/recuperar-password",
+        "/api/auth/verificar-codigo",
+        "/api/auth/nueva-password",
+        "/api/setup/"
+    };
+
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
 
+        String path = request.getRequestURI();
+
+        // Si es ruta pública, deja pasar sin validar token
+        for (String ruta : RUTAS_PUBLICAS) {
+            if (path.startsWith(ruta)) {
+                filterChain.doFilter(request, response);
+                return;
+            }
+        }
+
         String authHeader = request.getHeader("Authorization");
 
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            filterChain.doFilter(request, response); return;
+            filterChain.doFilter(request, response);
+            return;
         }
 
         String token = authHeader.substring(7);
 
         if (!jwtUtil.validateToken(token)) {
-            filterChain.doFilter(request, response); return;
+            filterChain.doFilter(request, response);
+            return;
         }
 
         String email = jwtUtil.getEmailFromToken(token);
         String jti   = jwtUtil.getJtiFromToken(token);
 
-        // Validación de sesión única: compara el jti del token con el
-        // guardado en la BD. Si no coincide, significa que el usuario
-        // inició sesión desde otro dispositivo y esta sesión quedó
-        // invalidada — se rechaza la petición con 401.
+        // Validación de sesión única
         Optional<Usuario> usuarioOpt = usuarioRepository.findByEmail(email);
         if (usuarioOpt.isEmpty() || !jti.equals(usuarioOpt.get().getSessionToken())) {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
