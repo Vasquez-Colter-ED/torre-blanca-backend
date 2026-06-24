@@ -56,11 +56,21 @@ public class AuthService {
     public LoginResponse login(LoginRequest request) {
         verificarRateLimit(request.getEmail());
 
-        Usuario usuario = usuarioRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> {
-                    registrarIntentoFallido(request.getEmail());
-                    return new RuntimeException("Credenciales incorrectas");
-                });
+        // Si tiene exactamente 8 dígitos es un DNI, si no es email
+        Usuario usuario;
+        if (request.getEmail().matches("\\d{8}")) {
+            usuario = usuarioRepository.findByDni(request.getEmail())
+                    .orElseThrow(() -> {
+                        registrarIntentoFallido(request.getEmail());
+                        return new RuntimeException("Credenciales incorrectas");
+                    });
+        } else {
+            usuario = usuarioRepository.findByEmail(request.getEmail())
+                    .orElseThrow(() -> {
+                        registrarIntentoFallido(request.getEmail());
+                        return new RuntimeException("Credenciales incorrectas");
+                    });
+        }
 
         if (usuario.getEstado() != EstadoUsuario.ACTIVO)
             throw new RuntimeException("Tu cuenta está inactiva o suspendida");
