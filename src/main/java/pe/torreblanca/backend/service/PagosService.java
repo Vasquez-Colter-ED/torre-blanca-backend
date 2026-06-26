@@ -353,6 +353,8 @@ public class PagosService {
         r.setPiso(c.getDepartamento().getPiso());
         r.setMetrosCuadrados(c.getDepartamento().getMetrosCuadrados());
         r.setMontoCalculado(c.getMontoCalculado());
+        r.setMes(c.getConfiguracion().getMes());
+        r.setAnio(c.getConfiguracion().getAnio());
         r.setEstadoCuota(c.getEstado().name());
         r.setResidentesNombres(obtenerResidentesDeDepto(c.getDepartamento().getId()));
         r.setPagos(pagoRepository.findByCuotaId(c.getId()).stream()
