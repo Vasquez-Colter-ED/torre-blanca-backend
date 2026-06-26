@@ -12,6 +12,7 @@ import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
 import java.util.Map;
+import java.util.UUID;
 
 @Service
 public class MercadoPagoService {
@@ -53,6 +54,7 @@ public class MercadoPagoService {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setBearerAuth(accessToken);
+        headers.set("X-Idempotency-Key", UUID.randomUUID().toString());
 
         HttpEntity<Map<String, Object>> httpRequest = new HttpEntity<>(mpRequest, headers);
 
