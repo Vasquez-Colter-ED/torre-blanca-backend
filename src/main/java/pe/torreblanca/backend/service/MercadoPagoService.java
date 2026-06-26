@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
@@ -61,6 +62,7 @@ public class MercadoPagoService {
 
             Map<String, Object> body = response.getBody();
             String status = (String) body.get("status");
+            System.out.println("[MP] Status: " + status + " | Response: " + body);
 
             if ("approved".equals(status)) {
                 PagoMantenimiento pago = new PagoMantenimiento();
@@ -88,9 +90,13 @@ public class MercadoPagoService {
             } else {
                 throw new RuntimeException("Pago rechazado por la entidad emisora. Verifica los datos de tu tarjeta.");
             }
+        } catch (HttpClientErrorException e) {
+            System.err.println("[MP ERROR] HTTP " + e.getStatusCode() + " | Body: " + e.getResponseBodyAsString());
+            throw new RuntimeException("Error MP: " + e.getResponseBodyAsString());
         } catch (Exception e) {
+            System.err.println("[MP ERROR] " + e.getClass().getSimpleName() + ": " + e.getMessage());
             if (e.getMessage() != null && e.getMessage().contains("rechazado")) throw e;
-            throw new RuntimeException("Error al procesar el pago. Intenta nuevamente.");
+            throw new RuntimeException("Error al procesar el pago: " + e.getMessage());
         }
     }
 
