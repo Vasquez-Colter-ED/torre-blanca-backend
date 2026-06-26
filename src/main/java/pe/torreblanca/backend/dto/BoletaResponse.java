@@ -22,4 +22,5 @@ public class BoletaResponse {
     private Integer anio;
     // Emitida por
     private String emitidaPorNombre;
+    private String voucherUrl;
 }

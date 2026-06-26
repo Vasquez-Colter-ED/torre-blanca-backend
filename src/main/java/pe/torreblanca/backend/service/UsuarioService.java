@@ -115,6 +115,41 @@ public class UsuarioService {
                 throw new RuntimeException("No puedes cambiar la contraseña de otro usuario");
             usuario.setPasswordHash(passwordEncoder.encode(request.getNuevaPassword()));
         }
+
+        // Solo directivos pueden cambiar rol
+        if (request.getRolId() != null && esAdmin) {
+            asignarRol(id, request.getRolId(), solicitanteId);
+        }
+
+        // Solo directivos pueden cambiar departamento y tipo
+        if (request.getDepartamentoId() != null && esAdmin) {
+            Departamento depto = departamentoRepository.findById(request.getDepartamentoId()).orElse(null);
+            if (depto != null) {
+                String tipo = request.getTipoResidencia() != null ? request.getTipoResidencia() : "PROPIETARIO";
+                if ("INQUILINO".equals(tipo)) {
+                    // Verificar que haya propietario en el depto
+                    long actuales = inquilinoDeptoRepository.findActivosByDepartamentoId(depto.getId()).size();
+                    if (actuales >= 5) throw new RuntimeException("El departamento ya alcanzó el máximo de inquilinos");
+                    // Buscar propietario activo del depto
+                    propietarioDeptoRepository.findActivoByDepartamentoId(depto.getId()).ifPresent(propDep -> {
+                        InquilinoDepartamento inq = new InquilinoDepartamento();
+                        inq.setUsuario(usuario); inq.setDepartamento(depto);
+                        inq.setPropietario(propDep.getUsuario());
+                        inq.setFechaInicio(LocalDate.now()); inq.setEstado(true);
+                        inquilinoDeptoRepository.save(inq);
+                    });
+                } else {
+                    // Asignar como propietario
+                    propietarioDeptoRepository.findActivoByDepartamentoId(depto.getId())
+                            .ifPresent(pd -> { pd.setEstado(false); propietarioDeptoRepository.save(pd); });
+                    PropietarioDepartamento pd = new PropietarioDepartamento();
+                    pd.setUsuario(usuario); pd.setDepartamento(depto);
+                    pd.setFechaInicio(LocalDate.now()); pd.setEstado(true);
+                    propietarioDeptoRepository.save(pd);
+                }
+            }
+        }
+
         return toResponse(usuarioRepository.save(usuario));
     }
 

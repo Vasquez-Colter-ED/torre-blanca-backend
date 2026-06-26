@@ -83,6 +83,7 @@ public class BoletasService {
         r.setMetodoPago(pago.getMetodoPago().name());
         r.setNumeroOperacion(pago.getNumeroOperacion());
         r.setFechaPago(pago.getFechaPago());
+        r.setVoucherUrl(pago.getVoucherUrl());
         r.setMes(pago.getCuota().getConfiguracion().getMes());
         r.setAnio(pago.getCuota().getConfiguracion().getAnio());
 
