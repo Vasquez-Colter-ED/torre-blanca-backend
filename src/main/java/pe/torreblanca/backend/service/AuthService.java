@@ -136,7 +136,8 @@ public class AuthService {
             }
         });
 
-        return new MensajeResponse("Si ese correo está registrado, recibirás un código en breve.", true);
+        return new MensajeResponse("Si ese correo está registrado, recibirás un código en breve.",
+                usuarioOpt.isPresent());
     }
 
     // Paso 2: verifica que el código sea correcto y no haya expirado
