@@ -12,10 +12,10 @@ import java.util.Map;
 @Service
 public class EmailService {
 
-    @Value("${brevo.api.key}")
+    @Value("${brevo.api.key:none}")
     private String brevoApiKey;
 
-    @Value("${brevo.sender.email}")
+    @Value("${brevo.sender.email:noreply@torreblanca.com}")
     private String senderEmail;
 
     private final RestTemplate restTemplate = new RestTemplate();
