@@ -102,29 +102,31 @@ public class AuthService {
 
     // Paso 1: genera código de 6 dígitos, lo guarda en BD y envía el email
     public MensajeResponse recuperarPassword(RecuperarPasswordRequest request) {
-        // Siempre respondemos igual para no revelar si el email existe
         usuarioRepository.findByEmail(request.getEmail()).ifPresent(usuario -> {
             if (usuario.getEstado() != EstadoUsuario.ACTIVO) return;
 
-            // Genera código de 6 dígitos
             String codigo = String.format("%06d", new Random().nextInt(999999));
 
-            // Guarda en BD con expiración de 15 minutos
+            // Primero guardamos el código en BD — esto no debe fallar
             usuario.setResetCode(codigo);
             usuario.setResetCodeExpires(LocalDateTime.now().plusMinutes(15));
             usuario.setResetCodeVerificado(false);
             usuarioRepository.save(usuario);
 
-            // Envía el email con la plantilla HTML
-            emailService.enviarCodigoRecuperacion(
-                usuario.getEmail(),
-                usuario.getNombre(),
-                codigo
-            );
+            // Log siempre visible en Render
+            System.out.println("[RECUPERACION] Usuario: " + usuario.getEmail() + " | Codigo: " + codigo);
+
+            // Intentar enviar email — si falla, el código sigue guardado en BD
+            try {
+                emailService.enviarCodigoRecuperacion(usuario.getEmail(), usuario.getNombre(), codigo);
+                System.out.println("[RECUPERACION] Email enviado correctamente a: " + usuario.getEmail());
+            } catch (Exception e) {
+                System.err.println("[RECUPERACION] Fallo email a " + usuario.getEmail() + ": " + e.getMessage());
+                // No relanzamos — el código ya está en BD y el usuario puede avanzar
+            }
         });
 
-        return new MensajeResponse(
-            "Si ese correo está registrado, recibirás un código en breve.", true);
+        return new MensajeResponse("Si ese correo está registrado, recibirás un código en breve.", true);
     }
 
     // Paso 2: verifica que el código sea correcto y no haya expirado

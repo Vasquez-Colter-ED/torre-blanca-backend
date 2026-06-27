@@ -28,11 +28,11 @@ public class EmailService {
             headers.setContentType(MediaType.APPLICATION_JSON);
             headers.setBearerAuth(resendApiKey);
 
+            System.out.println("[EMAIL] Enviando a: " + destinatario + " via Resend...");
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
             ResponseEntity<String> response = restTemplate.postForEntity(
                 "https://api.resend.com/emails", request, String.class);
-
-            System.out.println("✅ Correo enviado a " + destinatario + " | Status: " + response.getStatusCode());
+            System.out.println("[EMAIL] Respuesta Resend: HTTP " + response.getStatusCode() + " | Body: " + response.getBody());
         } catch (Exception e) {
             System.err.println("❌ ERROR enviando correo a " + destinatario + ": " + e.getMessage());
             throw new RuntimeException("No se pudo enviar el correo. Intenta nuevamente.");
