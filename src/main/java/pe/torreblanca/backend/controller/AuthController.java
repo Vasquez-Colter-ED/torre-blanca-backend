@@ -20,6 +20,11 @@ public class AuthController {
     @Autowired private UsuarioRepository usuarioRepository;
     @Autowired private JwtUtil jwtUtil;
 
+    @GetMapping("/ping")
+    public ResponseEntity<String> ping() {
+        return ResponseEntity.ok("pong");
+    }
+
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody LoginRequest request) {
         try { return ResponseEntity.ok(authService.login(request)); }

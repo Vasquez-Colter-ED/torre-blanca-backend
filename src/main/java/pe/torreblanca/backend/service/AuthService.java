@@ -102,8 +102,18 @@ public class AuthService {
 
     // Paso 1: genera código de 6 dígitos, lo guarda en BD y envía el email
     public MensajeResponse recuperarPassword(RecuperarPasswordRequest request) {
-        usuarioRepository.findByEmail(request.getEmail()).ifPresent(usuario -> {
-            if (usuario.getEstado() != EstadoUsuario.ACTIVO) return;
+        System.out.println("[RECUPERACION] Solicitud recibida para: " + request.getEmail());
+        var usuarioOpt = usuarioRepository.findByEmail(request.getEmail());
+        System.out.println("[RECUPERACION] Usuario encontrado: " + usuarioOpt.isPresent());
+        if (usuarioOpt.isPresent()) {
+            System.out.println("[RECUPERACION] Estado del usuario: " + usuarioOpt.get().getEstado());
+        }
+
+        usuarioOpt.ifPresent(usuario -> {
+            if (usuario.getEstado() != EstadoUsuario.ACTIVO) {
+                System.out.println("[RECUPERACION] Usuario inactivo, no se envia codigo");
+                return;
+            }
 
             String codigo = String.format("%06d", new Random().nextInt(999999));
 

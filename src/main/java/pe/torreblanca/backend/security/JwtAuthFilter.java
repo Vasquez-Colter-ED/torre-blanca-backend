@@ -27,6 +27,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     // Rutas públicas que no necesitan token — el filtro las deja pasar sin validar
     private static final String[] RUTAS_PUBLICAS = {
         "/api/auth/login",
+        "/api/auth/ping",
         "/api/auth/recuperar-password",
         "/api/auth/verificar-codigo",
         "/api/auth/nueva-password",
