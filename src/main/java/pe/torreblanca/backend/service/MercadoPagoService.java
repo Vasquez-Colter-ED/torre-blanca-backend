@@ -31,6 +31,7 @@ public class MercadoPagoService {
 
     private final RestTemplate restTemplate = new RestTemplate();
 
+    // ── Pago individual ──────────────────────────────────────────────
     public MensajeResponse procesarPago(PagoMercadoPagoRequest request, Integer solicitanteId) {
         CuotaMantenimiento cuota = cuotaRepository.findById(request.getCuotaId())
                 .orElseThrow(() -> new RuntimeException("Cuota no encontrada"));
@@ -38,8 +39,8 @@ public class MercadoPagoService {
         if (cuota.getEstado() == EstadoCuota.PAGADO)
             throw new RuntimeException("Esta cuota ya está pagada");
 
-        boolean esDirectivo = esDirectivo(solicitanteId);
-        Integer pagadorId = esDirectivo && request.getPagadorId() != null
+        boolean esDir = esDirectivo(solicitanteId);
+        Integer pagadorId = esDir && request.getPagadorId() != null
                 ? request.getPagadorId() : solicitanteId;
 
         Usuario pagador = usuarioRepository.findById(pagadorId)
@@ -105,12 +106,7 @@ public class MercadoPagoService {
         }
     }
 
-    private boolean esDirectivo(Integer usuarioId) {
-        return usuarioRolRepository.findRolesActivosByUsuarioId(usuarioId)
-                .stream().anyMatch(ur -> ur.getRol().getEsDirectivo());
-    }
-
-    // ── Pago múltiple: cobra el total de varias cuotas en una sola transacción ──
+    // ── Pago múltiple ────────────────────────────────────────────────
     public MensajeResponse procesarPagoMultiple(PagoMultipleRequest request, Integer solicitanteId) {
         if (request.getCuotaIds() == null || request.getCuotaIds().isEmpty())
             throw new RuntimeException("Debes seleccionar al menos una cuota");
@@ -121,7 +117,8 @@ public class MercadoPagoService {
 
         cuotas.forEach(c -> {
             if (c.getEstado() == EstadoCuota.PAGADO)
-                throw new RuntimeException("La cuota de " + c.getConfiguracion().getMes() + "/" + c.getConfiguracion().getAnio() + " ya está pagada");
+                throw new RuntimeException("La cuota de " + c.getConfiguracion().getMes()
+                        + "/" + c.getConfiguracion().getAnio() + " ya está pagada");
         });
 
         Integer pagadorId = esDirectivo(solicitanteId) && request.getPagadorId() != null
@@ -129,7 +126,6 @@ public class MercadoPagoService {
         Usuario pagador = usuarioRepository.findById(pagadorId)
                 .orElseThrow(() -> new RuntimeException("Pagador no encontrado"));
 
-        // Suma total de todas las cuotas
         BigDecimal total = cuotas.stream()
                 .map(CuotaMantenimiento::getMontoCalculado)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -184,7 +180,6 @@ public class MercadoPagoService {
                     pagos.add(pago);
                 }
 
-                // Genera una boleta por cada cuota (con referencia al pago múltiple)
                 Usuario admin = usuarioRepository.findById(solicitanteId).orElse(pagador);
                 pagos.forEach(p -> boletasService.generarBoleta(p, admin));
 
@@ -206,3 +201,10 @@ public class MercadoPagoService {
             throw new RuntimeException("Error al procesar el pago: " + e.getMessage());
         }
     }
+
+    // ── Utilitario ───────────────────────────────────────────────────
+    private boolean esDirectivo(Integer usuarioId) {
+        return usuarioRolRepository.findRolesActivosByUsuarioId(usuarioId)
+                .stream().anyMatch(ur -> ur.getRol().getEsDirectivo());
+    }
+}
