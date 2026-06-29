@@ -31,6 +31,13 @@ public class MercadoPagoService {
 
     private final RestTemplate restTemplate = new RestTemplate();
 
+    // Comisión MP Perú: 3.99% + S/ 0.30
+    private BigDecimal calcularComision(BigDecimal monto) {
+        return monto.multiply(new BigDecimal("0.0399"))
+                .add(new BigDecimal("0.30"))
+                .setScale(2, RoundingMode.HALF_UP);
+    }
+
     // ── Pago individual ──────────────────────────────────────────────
     public MensajeResponse procesarPago(PagoMercadoPagoRequest request, Integer solicitanteId) {
         CuotaMantenimiento cuota = cuotaRepository.findById(request.getCuotaId())
@@ -75,6 +82,7 @@ public class MercadoPagoService {
                 pago.setCuota(cuota);
                 pago.setPagador(pagador);
                 pago.setMonto(cuota.getMontoCalculado());
+                pago.setComision(calcularComision(cuota.getMontoCalculado()));
                 pago.setFechaPago(LocalDateTime.now());
                 pago.setMetodoPago(MetodoPago.TRANSFERENCIA);
                 pago.setNumeroOperacion(body.get("id").toString());
@@ -167,6 +175,7 @@ public class MercadoPagoService {
                     pago.setCuota(cuota);
                     pago.setPagador(pagador);
                     pago.setMonto(cuota.getMontoCalculado());
+                    pago.setComision(calcularComision(cuota.getMontoCalculado()));
                     pago.setFechaPago(LocalDateTime.now());
                     pago.setMetodoPago(MetodoPago.TRANSFERENCIA);
                     pago.setNumeroOperacion(operacionId);

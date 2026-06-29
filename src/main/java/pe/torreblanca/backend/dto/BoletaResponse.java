@@ -14,6 +14,7 @@ public class BoletaResponse {
     private String numeroDepartamento;
     private Integer piso;
     private BigDecimal monto;
+    private BigDecimal comision;
     private String metodoPago;
     private String numeroOperacion;
     private LocalDateTime fechaPago;

@@ -80,6 +80,7 @@ public class BoletasService {
         r.setNumeroDepartamento(pago.getCuota().getDepartamento().getNumero());
         r.setPiso(pago.getCuota().getDepartamento().getPiso());
         r.setMonto(pago.getMonto());
+        r.setComision(pago.getComision());
         r.setMetodoPago(pago.getMetodoPago().name());
         r.setNumeroOperacion(pago.getNumeroOperacion());
         r.setFechaPago(pago.getFechaPago());

@@ -24,6 +24,9 @@ public class PagoMantenimiento {
 
     private BigDecimal monto;
 
+    @Column(name = "comision", precision = 10, scale = 2)
+    private BigDecimal comision;
+
     @Column(name = "fecha_pago")
     private LocalDateTime fechaPago;
 
