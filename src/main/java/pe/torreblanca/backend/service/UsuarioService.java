@@ -40,41 +40,93 @@ public class UsuarioService {
     public UsuarioResponse crear(CrearUsuarioRequest request, Integer adminId) {
         verificarDirectivo(adminId, "crear usuarios");
 
-        // Validaciones de formato — sin caracteres especiales
+        // Validaciones básicas
         ValidacionUtil.validarNombre(request.getNombre(), "El nombre");
         ValidacionUtil.validarNombre(request.getApellido(), "El apellido");
-        ValidacionUtil.validarDni(request.getDni());
-        ValidacionUtil.validarEmail(request.getEmail());
-        ValidacionUtil.validarTelefono(request.getTelefono());
 
-        if (usuarioRepository.existsByEmail(request.getEmail()))
-            throw new RuntimeException("El email ya está registrado");
-        if (request.getDni() != null && usuarioRepository.existsByDni(request.getDni()))
-            throw new RuntimeException("El DNI ya está registrado");
+        boolean tieneEmail = request.getEmail() != null && !request.getEmail().trim().isEmpty();
+        boolean tieneDni   = request.getDni()   != null && !request.getDni().trim().isEmpty();
+        if (!tieneEmail && !tieneDni)
+            throw new RuntimeException("Debe ingresar al menos un correo electrónico o un DNI para que el usuario pueda iniciar sesión");
 
+        if (tieneEmail) {
+            ValidacionUtil.validarEmail(request.getEmail());
+            if (usuarioRepository.existsByEmail(request.getEmail()))
+                throw new RuntimeException("El correo electrónico ya está registrado");
+        }
+        if (tieneDni) {
+            ValidacionUtil.validarDni(request.getDni());
+            if (usuarioRepository.existsByDni(request.getDni()))
+                throw new RuntimeException("El DNI ya está registrado");
+        }
+        if (request.getTelefono() != null && !request.getTelefono().trim().isEmpty())
+            ValidacionUtil.validarTelefono(request.getTelefono());
+
+        // Departamento obligatorio
+        if (request.getDepartamentoId() == null)
+            throw new RuntimeException("Debe asignar un departamento al usuario");
+        String tipo = request.getTipoResidencia() != null ? request.getTipoResidencia() : "PROPIETARIO";
+        if (!tipo.equals("PROPIETARIO") && !tipo.equals("INQUILINO"))
+            throw new RuntimeException("El tipo de residencia debe ser PROPIETARIO o INQUILINO");
+
+        Departamento depto = departamentoRepository.findById(request.getDepartamentoId())
+                .orElseThrow(() -> new RuntimeException("Departamento no encontrado"));
+
+        // Validar disponibilidad del departamento
+        if (tipo.equals("PROPIETARIO") && propietarioDeptoRepository.findActivoByDepartamentoId(depto.getId()).isPresent())
+            throw new RuntimeException("El departamento " + depto.getNumero() + " ya tiene un propietario activo. Primero debe desvincularlo.");
+        if (tipo.equals("INQUILINO")) {
+            long actuales = inquilinoDeptoRepository.findActivosByDepartamentoId(depto.getId()).size();
+            if (actuales >= 5)
+                throw new RuntimeException("El departamento " + depto.getNumero() + " ya tiene 5 inquilinos, que es el máximo permitido");
+        }
+
+        // Cargo directivo opcional — solo roles con es_directivo = true
+        if (request.getCargoDirectivoId() != null) {
+            Rol rol = rolRepository.findById(request.getCargoDirectivoId())
+                    .orElseThrow(() -> new RuntimeException("Cargo directivo no encontrado"));
+            if (!rol.getEsDirectivo())
+                throw new RuntimeException("El cargo seleccionado no es un cargo directivo válido");
+        }
+
+        // Crear usuario
         Usuario nuevo = new Usuario();
         nuevo.setNombre(request.getNombre());
         nuevo.setApellido(request.getApellido());
-        nuevo.setDni(request.getDni());
-        nuevo.setEmail(request.getEmail());
+        nuevo.setDni(tieneDni ? request.getDni().trim() : null);
+        nuevo.setEmail(tieneEmail ? request.getEmail().trim() : null);
         nuevo.setTelefono(request.getTelefono());
         nuevo.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         nuevo.setEstado(EstadoUsuario.ACTIVO);
         Usuario guardado = usuarioRepository.save(nuevo);
 
-        if (request.getRolId() != null) asignarRol(guardado.getId(), request.getRolId(), adminId);
-
-        if (request.getDepartamentoId() != null) {
-            Departamento depto = departamentoRepository.findById(request.getDepartamentoId()).orElse(null);
-            if (depto != null) {
-                propietarioDeptoRepository.findActivoByDepartamentoId(depto.getId())
-                        .ifPresent(pd -> { pd.setEstado(false); propietarioDeptoRepository.save(pd); });
-                PropietarioDepartamento pd = new PropietarioDepartamento();
-                pd.setUsuario(guardado); pd.setDepartamento(depto);
-                pd.setFechaInicio(LocalDate.now()); pd.setEstado(true);
-                propietarioDeptoRepository.save(pd);
+        // Asignar al departamento según tipo
+        if (tipo.equals("PROPIETARIO")) {
+            PropietarioDepartamento pd = new PropietarioDepartamento();
+            pd.setUsuario(guardado); pd.setDepartamento(depto);
+            pd.setFechaInicio(LocalDate.now()); pd.setEstado(true);
+            propietarioDeptoRepository.save(pd);
+        } else {
+            // Para inquilino buscamos al propietario activo del depto
+            propietarioDeptoRepository.findActivoByDepartamentoId(depto.getId()).ifPresent(propDep -> {
+                InquilinoDepartamento inq = new InquilinoDepartamento();
+                inq.setUsuario(guardado); inq.setDepartamento(depto);
+                inq.setPropietario(propDep.getUsuario());
+                inq.setFechaInicio(LocalDate.now()); inq.setEstado(true);
+                inquilinoDeptoRepository.save(inq);
+            });
+            if (propietarioDeptoRepository.findActivoByDepartamentoId(depto.getId()).isEmpty()) {
+                // Sin propietario aún, lo guardamos igual (propietario_id null)
+                InquilinoDepartamento inq = new InquilinoDepartamento();
+                inq.setUsuario(guardado); inq.setDepartamento(depto);
+                inq.setFechaInicio(LocalDate.now()); inq.setEstado(true);
+                inquilinoDeptoRepository.save(inq);
             }
         }
+
+        // Asignar cargo directivo si se indicó
+        if (request.getCargoDirectivoId() != null)
+            asignarRol(guardado.getId(), request.getCargoDirectivoId(), adminId);
 
         return toResponse(guardado);
     }
