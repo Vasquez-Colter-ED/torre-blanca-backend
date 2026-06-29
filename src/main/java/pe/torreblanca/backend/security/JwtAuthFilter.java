@@ -31,7 +31,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         "/api/auth/recuperar-password",
         "/api/auth/verificar-codigo",
         "/api/auth/nueva-password",
-        "/api/setup/"
+        "/api/setup/",
+        "/api/departamentos",
+        "/api/usuarios/catalogos/"
     };
 
     @Override
@@ -40,6 +42,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                                     FilterChain filterChain) throws ServletException, IOException {
 
         String path = request.getRequestURI();
+        String method = request.getMethod();
+
+        // Log para debug de 403s
+        if (path.contains("departamentos")) {
+            System.out.println("[SECURITY] " + method + " " + path +
+                " | Auth header: " + (request.getHeader("Authorization") != null ? "presente" : "AUSENTE"));
+        }
 
         // Si es ruta pública, deja pasar sin validar token
         for (String ruta : RUTAS_PUBLICAS) {
