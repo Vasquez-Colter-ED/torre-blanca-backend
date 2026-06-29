@@ -11,6 +11,6 @@ public interface PropietarioDepartamentoRepository extends JpaRepository<Propiet
     @Query("SELECT pd FROM PropietarioDepartamento pd WHERE pd.usuario.id = :usuarioId AND pd.estado = true")
     List<PropietarioDepartamento> findActivosByUsuarioId(Integer usuarioId);
 
-    @Query("SELECT pd FROM PropietarioDepartamento pd WHERE pd.departamento.id = :deptoId AND pd.estado = true")
+    @Query("SELECT pd FROM PropietarioDepartamento pd WHERE pd.departamento.id = :deptoId AND pd.estado = true ORDER BY pd.id DESC LIMIT 1")
     Optional<PropietarioDepartamento> findActivoByDepartamentoId(Integer deptoId);
 }
