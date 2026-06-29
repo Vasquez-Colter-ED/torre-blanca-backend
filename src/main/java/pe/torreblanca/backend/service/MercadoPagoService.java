@@ -10,7 +10,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -106,4 +109,100 @@ public class MercadoPagoService {
         return usuarioRolRepository.findRolesActivosByUsuarioId(usuarioId)
                 .stream().anyMatch(ur -> ur.getRol().getEsDirectivo());
     }
-}
+
+    // ── Pago múltiple: cobra el total de varias cuotas en una sola transacción ──
+    public MensajeResponse procesarPagoMultiple(PagoMultipleRequest request, Integer solicitanteId) {
+        if (request.getCuotaIds() == null || request.getCuotaIds().isEmpty())
+            throw new RuntimeException("Debes seleccionar al menos una cuota");
+
+        List<CuotaMantenimiento> cuotas = cuotaRepository.findAllById(request.getCuotaIds());
+        if (cuotas.size() != request.getCuotaIds().size())
+            throw new RuntimeException("Una o más cuotas no fueron encontradas");
+
+        cuotas.forEach(c -> {
+            if (c.getEstado() == EstadoCuota.PAGADO)
+                throw new RuntimeException("La cuota de " + c.getConfiguracion().getMes() + "/" + c.getConfiguracion().getAnio() + " ya está pagada");
+        });
+
+        Integer pagadorId = esDirectivo(solicitanteId) && request.getPagadorId() != null
+                ? request.getPagadorId() : solicitanteId;
+        Usuario pagador = usuarioRepository.findById(pagadorId)
+                .orElseThrow(() -> new RuntimeException("Pagador no encontrado"));
+
+        // Suma total de todas las cuotas
+        BigDecimal total = cuotas.stream()
+                .map(CuotaMantenimiento::getMontoCalculado)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        String descripcion = cuotas.size() == 1
+                ? "Cuota mantenimiento Depto " + cuotas.get(0).getDepartamento().getNumero()
+                : "Pago múltiple " + cuotas.size() + " cuotas - Depto " + cuotas.get(0).getDepartamento().getNumero();
+
+        Map<String, Object> mpRequest = Map.of(
+            "transaction_amount", total.doubleValue(),
+            "token",              request.getToken(),
+            "description",       descripcion,
+            "installments",      request.getCuotas() != null ? request.getCuotas() : 1,
+            "payment_method_id", request.getMetodoPago() != null ? request.getMetodoPago() : "visa",
+            "payer",             Map.of("email", request.getEmail())
+        );
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setBearerAuth(accessToken);
+        headers.set("X-Idempotency-Key", UUID.randomUUID().toString());
+
+        HttpEntity<Map<String, Object>> httpRequest = new HttpEntity<>(mpRequest, headers);
+
+        try {
+            ResponseEntity<Map> response = restTemplate.postForEntity(
+                "https://api.mercadopago.com/v1/payments", httpRequest, Map.class);
+
+            Map<String, Object> body = response.getBody();
+            String status = (String) body.get("status");
+            System.out.println("[MP-MULTIPLE] Status: " + status + " | Total: " + total);
+
+            if ("approved".equals(status)) {
+                String operacionId = body.get("id").toString();
+                List<PagoMantenimiento> pagos = new java.util.ArrayList<>();
+
+                for (CuotaMantenimiento cuota : cuotas) {
+                    PagoMantenimiento pago = new PagoMantenimiento();
+                    pago.setCuota(cuota);
+                    pago.setPagador(pagador);
+                    pago.setMonto(cuota.getMontoCalculado());
+                    pago.setFechaPago(LocalDateTime.now());
+                    pago.setMetodoPago(MetodoPago.TRANSFERENCIA);
+                    pago.setNumeroOperacion(operacionId);
+                    pago.setObservaciones("Pago múltiple con tarjeta via Mercado Pago - " + cuotas.size() + " cuotas");
+                    pago.setEstado(EstadoPago.VERIFICADO);
+                    pago.setRegistradoPor("RESIDENTE");
+                    pagoRepository.save(pago);
+
+                    cuota.setEstado(EstadoCuota.PAGADO);
+                    cuotaRepository.save(cuota);
+                    pagos.add(pago);
+                }
+
+                // Genera una boleta por cada cuota (con referencia al pago múltiple)
+                Usuario admin = usuarioRepository.findById(solicitanteId).orElse(pagador);
+                pagos.forEach(p -> boletasService.generarBoleta(p, admin));
+
+                return new MensajeResponse(
+                    "Pago aprobado por S/ " + total.setScale(2, RoundingMode.HALF_UP) +
+                    ". Se generaron " + cuotas.size() + " recibo(s) a nombre de " +
+                    pagador.getNombre() + " " + pagador.getApellido(), true);
+
+            } else if ("in_process".equals(status) || "pending".equals(status)) {
+                return new MensajeResponse("El pago está en proceso. Te notificaremos cuando se confirme.", true);
+            } else {
+                throw new RuntimeException("Pago rechazado por la entidad emisora. Verifica los datos de tu tarjeta.");
+            }
+        } catch (HttpClientErrorException e) {
+            System.err.println("[MP-MULTIPLE ERROR] HTTP " + e.getStatusCode() + " | " + e.getResponseBodyAsString());
+            throw new RuntimeException("Error MP: " + e.getResponseBodyAsString());
+        } catch (Exception e) {
+            if (e.getMessage() != null && e.getMessage().contains("rechazado")) throw e;
+            throw new RuntimeException("Error al procesar el pago: " + e.getMessage());
+        }
+    }

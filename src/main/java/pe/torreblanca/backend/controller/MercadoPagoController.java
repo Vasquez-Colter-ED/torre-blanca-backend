@@ -1,6 +1,7 @@
 package pe.torreblanca.backend.controller;
 
 import pe.torreblanca.backend.dto.PagoMercadoPagoRequest;
+import pe.torreblanca.backend.dto.PagoMultipleRequest;
 import pe.torreblanca.backend.repository.UsuarioRepository;
 import pe.torreblanca.backend.security.JwtUtil;
 import pe.torreblanca.backend.service.MercadoPagoService;
@@ -28,6 +29,16 @@ public class MercadoPagoController {
                                    @RequestHeader("Authorization") String auth) {
         try {
             return ResponseEntity.ok(mercadoPagoService.procesarPago(request, getSolicitanteId(auth)));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+    @PostMapping("/pagar-multiple")
+    public ResponseEntity<?> pagarMultiple(@RequestBody PagoMultipleRequest request,
+                                           @RequestHeader("Authorization") String auth) {
+        try {
+            return ResponseEntity.ok(mercadoPagoService.procesarPagoMultiple(request, getSolicitanteId(auth)));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
