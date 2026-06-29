@@ -73,6 +73,15 @@ public class PagosService {
         return new MensajeResponse("Inquilino asignado al departamento " + departamento.getNumero(), true);
     }
 
+    public MensajeResponse quitarPropietario(Integer propietarioDeptoId, Integer adminId) {
+        verificarDirectivo(adminId);
+        PropietarioDepartamento pd = propietarioDeptoRepository.findById(propietarioDeptoId)
+                .orElseThrow(() -> new RuntimeException("Registro no encontrado"));
+        pd.setEstado(false); pd.setFechaFin(LocalDate.now());
+        propietarioDeptoRepository.save(pd);
+        return new MensajeResponse("Propietario desvinculado del departamento", true);
+    }
+
     public MensajeResponse quitarInquilino(Integer inquilinoDeptoId, Integer adminId) {
         verificarDirectivo(adminId);
         InquilinoDepartamento inq = inquilinoDeptoRepository.findById(inquilinoDeptoId)
@@ -333,6 +342,7 @@ public class PagosService {
         r.setEstado(d.getEstado().name());
         propietarioDeptoRepository.findActivoByDepartamentoId(d.getId()).ifPresent(pd -> {
             r.setPropietarioId(pd.getUsuario().getId());
+            r.setPropietarioAsignacionId(pd.getId());
             r.setPropietarioNombre(pd.getUsuario().getNombre() + " " + pd.getUsuario().getApellido());
             r.setPropietarioEmail(pd.getUsuario().getEmail());
         });

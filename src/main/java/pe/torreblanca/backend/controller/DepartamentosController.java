@@ -43,6 +43,13 @@ public class DepartamentosController {
         catch (Exception e) { return ResponseEntity.badRequest().body(e.getMessage()); }
     }
 
+    @DeleteMapping("/propietario/{id}")
+    public ResponseEntity<?> quitarPropietario(@PathVariable Integer id,
+                                               @RequestHeader("Authorization") String auth) {
+        try { return ResponseEntity.ok(pagosService.quitarPropietario(id, getSolicitanteId(auth))); }
+        catch (Exception e) { return ResponseEntity.badRequest().body(e.getMessage()); }
+    }
+
     @DeleteMapping("/inquilino/{id}")
     public ResponseEntity<?> quitarInquilino(@PathVariable Integer id,
                                              @RequestHeader("Authorization") String auth) {

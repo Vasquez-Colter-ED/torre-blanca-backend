@@ -14,5 +14,6 @@ public class DepartamentoDetalleResponse {
     private String propietarioNombre;
     private String propietarioEmail;
     private Integer propietarioId;
+    private Integer propietarioAsignacionId; // ID del registro en propietarios_departamentos
     private List<InquilinoInfo> inquilinos;
 }
