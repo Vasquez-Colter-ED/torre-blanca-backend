@@ -43,6 +43,22 @@ public class DepartamentosController {
         catch (Exception e) { return ResponseEntity.badRequest().body(e.getMessage()); }
     }
 
+    @DeleteMapping("/cochera-asignacion/{id}")
+    public ResponseEntity<?> quitarCochera(@PathVariable Integer id,
+                                           @RequestHeader("Authorization") String auth) {
+        try { return ResponseEntity.ok(pagosService.quitarCochera(id, getSolicitanteId(auth))); }
+        catch (Exception e) { return ResponseEntity.badRequest().body(e.getMessage()); }
+    }
+
+    @PostMapping("/asignar-cochera")
+    public ResponseEntity<?> asignarCochera(
+            @RequestParam Integer cocheraId,
+            @RequestParam Integer departamentoId,
+            @RequestHeader("Authorization") String auth) {
+        try { return ResponseEntity.ok(pagosService.asignarCochera(cocheraId, departamentoId, getSolicitanteId(auth))); }
+        catch (Exception e) { return ResponseEntity.badRequest().body(e.getMessage()); }
+    }
+
     @DeleteMapping("/propietario/{id}")
     public ResponseEntity<?> quitarPropietario(@PathVariable Integer id,
                                                @RequestHeader("Authorization") String auth) {

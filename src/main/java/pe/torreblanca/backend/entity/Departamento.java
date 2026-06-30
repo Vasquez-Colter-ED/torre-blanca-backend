@@ -20,6 +20,11 @@ public class Departamento {
     @Column(name = "metros_cuadrados")
     private BigDecimal metrosCuadrados;
 
+    @Column(name = "porcentaje", precision = 5, scale = 2)
+    private BigDecimal porcentaje;
+
+    private String tipo; // DEPARTAMENTO o ESTACIONAMIENTO
+
     private String descripcion;
 
     @Enumerated(EnumType.STRING)

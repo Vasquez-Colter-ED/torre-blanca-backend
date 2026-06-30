@@ -20,6 +20,13 @@ public class ConfiguracionMantenimiento {
     @Column(name = "costo_por_m2")
     private BigDecimal costoPorM2;
 
+    @Column(name = "total_mensual")
+    private BigDecimal totalMensual;
+
+    // COSTO_M2 (clásico) o PORCENTAJE (alicuota)
+    @Column(name = "tipo_calculo")
+    private String tipoCalculo = "COSTO_M2";
+
     @Column(name = "total_gastos_estimados")
     private BigDecimal totalGastosEstimados;
 

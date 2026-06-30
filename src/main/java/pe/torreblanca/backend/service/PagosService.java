@@ -21,6 +21,7 @@ public class PagosService {
 
     @Autowired private DepartamentoRepository departamentoRepository;
     @Autowired private ConfiguracionMantenimientoRepository configuracionRepository;
+    @Autowired private CocheraDepartamentoRepository cocheraDeptoRepository;
     @Autowired private CuotaMantenimientoRepository cuotaRepository;
     @Autowired private PagoMantenimientoRepository pagoRepository;
     @Autowired private UsuarioRepository usuarioRepository;
@@ -122,24 +123,54 @@ public class PagosService {
         verificarDirectivo(adminId);
         if (configuracionRepository.existsByMesAndAnio(request.getMes(), request.getAnio()))
             throw new RuntimeException("Ya existe configuración para " + request.getMes() + "/" + request.getAnio());
-        if (request.getCostoPorM2() == null || request.getCostoPorM2().compareTo(BigDecimal.ZERO) <= 0)
-            throw new RuntimeException("El costo por m² debe ser mayor a cero");
-        if (request.getTotalGastosEstimados() != null && request.getTotalGastosEstimados().compareTo(BigDecimal.ZERO) < 0)
-            throw new RuntimeException("El total de gastos estimados no puede ser negativo");
+
+        String tipo = request.getTipoCalculo() != null ? request.getTipoCalculo() : "COSTO_M2";
+
+        if ("PORCENTAJE".equals(tipo)) {
+            if (request.getTotalMensual() == null || request.getTotalMensual().compareTo(BigDecimal.ZERO) <= 0)
+                throw new RuntimeException("El monto total mensual debe ser mayor a cero");
+        } else {
+            if (request.getCostoPorM2() == null || request.getCostoPorM2().compareTo(BigDecimal.ZERO) <= 0)
+                throw new RuntimeException("El costo por m² debe ser mayor a cero");
+        }
 
         ValidacionUtil.validarTextoLibre(request.getObservaciones(), "Las observaciones");
 
         ConfiguracionMantenimiento config = new ConfiguracionMantenimiento();
         config.setMes(request.getMes()); config.setAnio(request.getAnio());
         config.setCostoPorM2(request.getCostoPorM2());
+        config.setTotalMensual(request.getTotalMensual());
+        config.setTipoCalculo(tipo);
         config.setTotalGastosEstimados(request.getTotalGastosEstimados());
         config.setObservaciones(request.getObservaciones());
         config.setCreadoPor(adminId);
         ConfiguracionMantenimiento savedConfig = configuracionRepository.save(config);
-        List<Departamento> departamentos = departamentoRepository.findAll();
+
+        // Solo generar cuotas para departamentos (no estacionamientos)
+        List<Departamento> departamentos = departamentoRepository.findAll().stream()
+                .filter(d -> !"ESTACIONAMIENTO".equals(d.getTipo()))
+                .collect(java.util.stream.Collectors.toList());
+
         LocalDate vencimiento = LocalDate.of(request.getAnio(), request.getMes(), 28);
         for (Departamento depto : departamentos) {
-            BigDecimal monto = depto.getMetrosCuadrados().multiply(request.getCostoPorM2());
+            BigDecimal monto;
+            if ("PORCENTAJE".equals(tipo)) {
+                // Suma el porcentaje del depto + sus cocheras asignadas
+                BigDecimal pctDepto = depto.getPorcentaje() != null ? depto.getPorcentaje() : BigDecimal.ZERO;
+                BigDecimal pctCocheras = cocheraDeptoRepository.findActivasByDepartamentoId(depto.getId())
+                        .stream()
+                        .map(cd -> cd.getCochera().getPorcentaje() != null ? cd.getCochera().getPorcentaje() : BigDecimal.ZERO)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+                BigDecimal pctTotal = pctDepto.add(pctCocheras);
+                monto = pctTotal.divide(new BigDecimal("100"), 2, java.math.RoundingMode.HALF_UP)
+                        .multiply(request.getTotalMensual());
+            } else {
+                // Método clásico: metros × costo_m2
+                monto = depto.getMetrosCuadrados() != null
+                        ? depto.getMetrosCuadrados().multiply(request.getCostoPorM2())
+                        : BigDecimal.ZERO;
+            }
+            monto = monto.setScale(2, java.math.RoundingMode.HALF_UP);
             CuotaMantenimiento cuota = new CuotaMantenimiento();
             cuota.setDepartamento(depto); cuota.setConfiguracion(savedConfig);
             cuota.setMontoCalculado(monto); cuota.setEstado(EstadoCuota.PENDIENTE);
@@ -339,6 +370,9 @@ public class PagosService {
         DepartamentoDetalleResponse r = new DepartamentoDetalleResponse();
         r.setId(d.getId()); r.setNumero(d.getNumero());
         r.setPiso(d.getPiso()); r.setMetrosCuadrados(d.getMetrosCuadrados());
+        r.setPorcentaje(d.getPorcentaje());
+        r.setTipo(d.getTipo() != null ? d.getTipo() : "DEPARTAMENTO");
+        r.setDescripcion(d.getDescripcion());
         r.setEstado(d.getEstado().name());
         propietarioDeptoRepository.findActivoByDepartamentoId(d.getId()).ifPresent(pd -> {
             r.setPropietarioId(pd.getUsuario().getId());
@@ -352,7 +386,43 @@ public class PagosService {
                     ii.setNombre(i.getUsuario().getNombre() + " " + i.getUsuario().getApellido());
                     ii.setEmail(i.getUsuario().getEmail()); return ii; })
                 .collect(Collectors.toList()));
+        r.setCocheras(cocheraDeptoRepository.findActivasByDepartamentoId(d.getId()).stream()
+                .map(cd -> { CocheraInfo ci = new CocheraInfo();
+                    ci.setAsignacionId(cd.getId());
+                    ci.setCocheraId(cd.getCochera().getId());
+                    ci.setNumero(cd.getCochera().getNumero());
+                    ci.setPorcentaje(cd.getCochera().getPorcentaje());
+                    ci.setMetros(cd.getCochera().getMetrosCuadrados()); return ci; })
+                .collect(Collectors.toList()));
         return r;
+    }
+
+    // ── Asignar cochera a departamento ────────────────────────────────
+    public MensajeResponse asignarCochera(Integer cocheraId, Integer deptoId, Integer adminId) {
+        verificarDirectivo(adminId);
+        Departamento cochera = departamentoRepository.findById(cocheraId)
+                .orElseThrow(() -> new RuntimeException("Cochera no encontrada"));
+        if (!"ESTACIONAMIENTO".equals(cochera.getTipo()))
+            throw new RuntimeException("El elemento seleccionado no es un estacionamiento");
+        Departamento depto = departamentoRepository.findById(deptoId)
+                .orElseThrow(() -> new RuntimeException("Departamento no encontrado"));
+        if (!cocheraDeptoRepository.findActivasByCocheraId(cocheraId).isEmpty())
+            throw new RuntimeException("Esta cochera ya está asignada a otro departamento");
+        CocheraDepartamento cd = new CocheraDepartamento();
+        cd.setCochera(cochera); cd.setDepartamento(depto);
+        cd.setFechaInicio(LocalDate.now()); cd.setEstado(true);
+        cocheraDeptoRepository.save(cd);
+        return new MensajeResponse("Cochera " + cochera.getNumero() + " asignada al Depto " + depto.getNumero(), true);
+    }
+
+    // ── Quitar cochera de departamento ────────────────────────────────
+    public MensajeResponse quitarCochera(Integer asignacionId, Integer adminId) {
+        verificarDirectivo(adminId);
+        CocheraDepartamento cd = cocheraDeptoRepository.findById(asignacionId)
+                .orElseThrow(() -> new RuntimeException("Asignación no encontrada"));
+        cd.setEstado(false); cd.setFechaFin(LocalDate.now());
+        cocheraDeptoRepository.save(cd);
+        return new MensajeResponse("Cochera desvinculada del departamento", true);
     }
 
     private CuotaDetalleResponse toCuotaDetalle(CuotaMantenimiento c) {
