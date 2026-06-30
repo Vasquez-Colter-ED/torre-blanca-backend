@@ -277,6 +277,17 @@ public class PagosService {
             throw new RuntimeException("El monto ingresado (S/ " + request.getMonto() +
                     ") supera el saldo pendiente de esta cuota (S/ " + saldoPendiente.setScale(2, java.math.RoundingMode.HALF_UP) + ")");
 
+        // No permitir un segundo pago mientras el anterior sigue sin verificar —
+        // evita sobre-pagos acumulados antes de que el directivo revise nada
+        boolean tienePagoPendiente = pagoRepository.findByCuotaId(cuota.getId()).stream()
+                .anyMatch(p -> p.getEstado() == EstadoPago.PENDIENTE_VERIFICACION);
+        if (tienePagoPendiente) {
+            String msgBloqueo = esDirectivo
+                ? "Este departamento tiene un pago pendiente de verificación. Apruébalo o recházalo primero para poder registrar uno nuevo."
+                : "Ya enviaste un pago para esta cuota que está pendiente de verificación. Espera a que el directivo lo apruebe o rechace antes de enviar otro.";
+            throw new RuntimeException(msgBloqueo);
+        }
+
         ValidacionUtil.validarTextoLibre(request.getNumeroOperacion(), "El número de operación");
         ValidacionUtil.validarTextoLibre(request.getObservaciones(), "Las observaciones");
 
