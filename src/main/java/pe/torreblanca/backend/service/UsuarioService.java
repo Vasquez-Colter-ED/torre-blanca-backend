@@ -169,8 +169,9 @@ public class UsuarioService {
         }
 
         // Solo directivos pueden cambiar rol
-        if (request.getRolId() != null && esAdmin) {
-            asignarRol(id, request.getRolId(), solicitanteId);
+        Integer rolIdEfectivo = request.rolIdEfectivo();
+        if (rolIdEfectivo != null && esAdmin) {
+            asignarRol(id, rolIdEfectivo, solicitanteId);
         }
 
         // Solo directivos pueden cambiar departamento y tipo

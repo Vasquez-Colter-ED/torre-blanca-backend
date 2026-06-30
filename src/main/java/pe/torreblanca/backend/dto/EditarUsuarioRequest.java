@@ -10,8 +10,14 @@ public class EditarUsuarioRequest {
     private String telefono;
     private String email;
     private String nuevaPassword; // solo directivos pueden cambiar contraseña ajena
-    private Integer rolId;         // solo directivos pueden cambiar rol
+    private Integer rolId;          // nombre histórico
+    private Integer cargoDirectivoId; // nombre que usa el frontend actual
     private Integer departamentoId; // solo directivos
-    private String tipoResidencia; // PROPIETARIO o INQUILINO
+    private String tipoResidencia;  // PROPIETARIO o INQUILINO
     private Integer propietarioId;  // requerido si tipoResidencia=INQUILINO
+
+    // Unifica ambos nombres: el service siempre debe llamar a este método
+    public Integer rolIdEfectivo() {
+        return rolId != null ? rolId : cargoDirectivoId;
+    }
 }
