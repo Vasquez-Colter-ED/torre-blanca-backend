@@ -92,6 +92,7 @@ public class MercadoPagoService {
                 pagoRepository.save(pago);
 
                 cuota.setEstado(EstadoCuota.PAGADO);
+                cuota.setMontoPagado(cuota.getMontoCalculado());
                 cuotaRepository.save(cuota);
 
                 Usuario admin = usuarioRepository.findById(solicitanteId).orElse(pagador);
@@ -185,6 +186,7 @@ public class MercadoPagoService {
                     pagoRepository.save(pago);
 
                     cuota.setEstado(EstadoCuota.PAGADO);
+                    cuota.setMontoPagado(cuota.getMontoCalculado());
                     cuotaRepository.save(cuota);
                     pagos.add(pago);
                 }
