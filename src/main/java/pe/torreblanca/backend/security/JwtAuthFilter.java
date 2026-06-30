@@ -32,7 +32,6 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         "/api/auth/verificar-codigo",
         "/api/auth/nueva-password",
         "/api/setup/",
-        "/api/departamentos",
         "/api/usuarios/catalogos/"
     };
 
@@ -56,6 +55,12 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 filterChain.doFilter(request, response);
                 return;
             }
+        }
+
+        // GET /api/departamentos (exacto, sin subrutas) también es público
+        if ("GET".equals(method) && "/api/departamentos".equals(path)) {
+            filterChain.doFilter(request, response);
+            return;
         }
 
         String authHeader = request.getHeader("Authorization");
