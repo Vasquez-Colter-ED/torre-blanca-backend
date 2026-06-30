@@ -171,7 +171,15 @@ public class UsuarioService {
         // Solo directivos pueden cambiar rol
         Integer rolIdEfectivo = request.rolIdEfectivo();
         if (rolIdEfectivo != null && esAdmin) {
-            asignarRol(id, rolIdEfectivo, solicitanteId);
+            if (rolIdEfectivo == 0) {
+                // Señal explícita: quitar el cargo directivo actual del usuario
+                usuarioRolRepository.findRolesActivosByUsuarioId(id).stream()
+                        .filter(ur -> ur.getRol().getEsDirectivo())
+                        .findFirst()
+                        .ifPresent(ur -> revocarRol(id, ur.getRol().getId(), solicitanteId));
+            } else {
+                asignarRol(id, rolIdEfectivo, solicitanteId);
+            }
         }
 
         // Solo directivos pueden cambiar departamento y tipo
@@ -233,6 +241,21 @@ public class UsuarioService {
         Rol rol = rolRepository.findById(rolId)
                 .orElseThrow(() -> new RuntimeException("Rol no encontrado"));
 
+        // Si el usuario ya tenía un cargo directivo distinto y se le va a cambiar
+        // (no a quitar, sino a reemplazar por otro rol), verificar que el cargo
+        // anterior no quede sin nadie
+        List<UsuarioRol> rolesActuales = usuarioRolRepository.findRolesActivosByUsuarioId(usuarioId);
+        for (UsuarioRol ur : rolesActuales) {
+            boolean esElMismoRol = ur.getRol().getId().equals(rolId);
+            if (!esElMismoRol && ur.getRol().getEsDirectivo()) {
+                long totalConEseCargo = usuarioRolRepository.countActivosByRolId(ur.getRol().getId());
+                if (totalConEseCargo <= 1) {
+                    throw new RuntimeException("No puedes reemplazar el cargo de " + ur.getRol().getNombre() +
+                            " de este usuario porque quedaría sin nadie en ese puesto. Primero asigna ese cargo a otra persona.");
+                }
+            }
+        }
+
         usuarioRolRepository.findRolesActivosByUsuarioId(usuarioId).stream()
                 .filter(ur -> ur.getRol().getId().equals(rolId))
                 .forEach(ur -> { ur.setEstado(false); usuarioRolRepository.save(ur); });
@@ -249,6 +272,18 @@ public class UsuarioService {
 
     public MensajeResponse revocarRol(Integer usuarioId, Integer rolId, Integer adminId) {
         verificarDirectivo(adminId, "revocar roles");
+        Rol rol = rolRepository.findById(rolId)
+                .orElseThrow(() -> new RuntimeException("Rol no encontrado"));
+
+        // No permitir quitar un cargo directivo si es el único que lo tiene activo
+        if (rol.getEsDirectivo()) {
+            long totalConEseCargo = usuarioRolRepository.countActivosByRolId(rolId);
+            if (totalConEseCargo <= 1) {
+                throw new RuntimeException("No puedes quitar el cargo de " + rol.getNombre() +
+                        " porque es el único activo. Primero asigna ese cargo a otra persona antes de revocarlo.");
+            }
+        }
+
         usuarioRolRepository.findRolesActivosByUsuarioId(usuarioId).stream()
                 .filter(ur -> ur.getRol().getId().equals(rolId))
                 .forEach(ur -> { ur.setEstado(false); usuarioRolRepository.save(ur); });
