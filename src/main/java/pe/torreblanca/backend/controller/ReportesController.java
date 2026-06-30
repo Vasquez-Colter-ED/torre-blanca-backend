@@ -23,4 +23,12 @@ public class ReportesController {
         try { return ResponseEntity.ok(reportesService.reporteAnio(anio)); }
         catch (Exception e) { return ResponseEntity.badRequest().body(e.getMessage()); }
     }
+
+    @GetMapping("/auditoria")
+    public ResponseEntity<?> auditoria(
+            @RequestParam(required = false) Integer mes,
+            @RequestParam(required = false) Integer anio) {
+        try { return ResponseEntity.ok(reportesService.obtenerAuditoria(mes, anio)); }
+        catch (Exception e) { return ResponseEntity.badRequest().body(e.getMessage()); }
+    }
 }

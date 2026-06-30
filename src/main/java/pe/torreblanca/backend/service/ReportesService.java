@@ -18,6 +18,7 @@ public class ReportesService {
     @Autowired private GastoRepository gastoRepository;
     @Autowired private PropietarioDepartamentoRepository propietarioDeptoRepository;
     @Autowired private InquilinoDepartamentoRepository inquilinoDeptoRepository;
+    @Autowired private PagoMantenimientoRepository pagoRepository;
 
     private static final String[] NOMBRES_MESES = {
         "Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"
@@ -126,6 +127,44 @@ public class ReportesService {
     }
 
     // ── Helper ────────────────────────────────────────────────────────
+
+    // ── Auditoría de pagos ───────────────────────────────────────────
+    // Lista cronológica de TODOS los movimientos de pago (registro y
+    // verificación), con nombre y cargo exacto de quién hizo cada acción
+    // en el momento en que la hizo. Si se pasan mes/anio, filtra solo
+    // los pagos de cuotas de ese periodo; si no, devuelve todo el historial.
+    public List<AuditoriaPagoResponse> obtenerAuditoria(Integer mes, Integer anio) {
+        List<PagoMantenimiento> pagos = (mes != null && anio != null)
+                ? pagoRepository.findByMesAndAnio(mes, anio)
+                : pagoRepository.findAllOrdenadoDesc();
+
+        return pagos.stream().map(p -> {
+            AuditoriaPagoResponse a = new AuditoriaPagoResponse();
+            a.setPagoId(p.getId());
+            a.setNumeroDepartamento(p.getCuota().getDepartamento().getNumero());
+            a.setPiso(p.getCuota().getDepartamento().getPiso());
+            a.setMes(p.getCuota().getConfiguracion().getMes());
+            a.setAnio(p.getCuota().getConfiguracion().getAnio());
+            a.setMonto(p.getMonto());
+            a.setMetodoPago(p.getMetodoPago().name());
+            a.setEsPasarela(p.getObservaciones() != null && p.getObservaciones().toLowerCase().contains("mercado pago"));
+            a.setPagadorNombre(p.getPagador().getNombre() + " " + p.getPagador().getApellido());
+
+            a.setFechaRegistro(p.getFechaPago() != null ? p.getFechaPago() : p.getCreatedAt());
+            a.setRegistradoPor(p.getRegistradoPor());
+            a.setRegistradoPorNombre(p.getRegistradoPorNombre());
+            a.setRegistradoPorCargo(p.getRegistradoPorCargo());
+
+            a.setEstado(p.getEstado().name());
+            a.setFechaVerificacion(p.getFechaVerificacion());
+            if (p.getVerificadoPor() != null)
+                a.setVerificadoPorNombre(p.getVerificadoPor().getNombre() + " " + p.getVerificadoPor().getApellido());
+            a.setVerificadoPorCargo(p.getVerificadoPorCargo());
+
+            a.setObservaciones(p.getObservaciones());
+            return a;
+        }).collect(Collectors.toList());
+    }
 
     private String obtenerResidentesDeDepto(Integer deptoId) {
         List<String> nombres = new ArrayList<>();

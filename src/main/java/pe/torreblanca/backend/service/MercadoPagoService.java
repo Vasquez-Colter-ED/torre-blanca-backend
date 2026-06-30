@@ -88,7 +88,17 @@ public class MercadoPagoService {
                 pago.setNumeroOperacion(body.get("id").toString());
                 pago.setObservaciones("Pago con tarjeta via Mercado Pago");
                 pago.setEstado(EstadoPago.VERIFICADO);
-                pago.setRegistradoPor("RESIDENTE");
+                pago.setRegistradoPor(esDir ? "DIRECTIVO" : "RESIDENTE");
+                // Snapshot de auditoría — si un directivo procesó el pago de otro
+                // residente, guardamos quién fue y con qué cargo en ese momento
+                if (esDir) {
+                    Usuario registrante = usuarioRepository.findById(solicitanteId).orElse(null);
+                    if (registrante != null) {
+                        pago.setRegistradoPorUsuario(registrante);
+                        pago.setRegistradoPorNombre(registrante.getNombre() + " " + registrante.getApellido());
+                        pago.setRegistradoPorCargo(obtenerCargoActual(solicitanteId));
+                    }
+                }
                 pagoRepository.save(pago);
 
                 cuota.setEstado(EstadoCuota.PAGADO);
@@ -134,6 +144,7 @@ public class MercadoPagoService {
                 ? request.getPagadorId() : solicitanteId;
         Usuario pagador = usuarioRepository.findById(pagadorId)
                 .orElseThrow(() -> new RuntimeException("Pagador no encontrado"));
+        boolean esDirMultiple = esDirectivo(solicitanteId);
 
         BigDecimal total = cuotas.stream()
                 .map(CuotaMantenimiento::getMontoCalculado)
@@ -182,7 +193,15 @@ public class MercadoPagoService {
                     pago.setNumeroOperacion(operacionId);
                     pago.setObservaciones("Pago múltiple con tarjeta via Mercado Pago - " + cuotas.size() + " cuotas");
                     pago.setEstado(EstadoPago.VERIFICADO);
-                    pago.setRegistradoPor("RESIDENTE");
+                    pago.setRegistradoPor(esDirMultiple ? "DIRECTIVO" : "RESIDENTE");
+                    if (esDirMultiple) {
+                        Usuario registrante = usuarioRepository.findById(solicitanteId).orElse(null);
+                        if (registrante != null) {
+                            pago.setRegistradoPorUsuario(registrante);
+                            pago.setRegistradoPorNombre(registrante.getNombre() + " " + registrante.getApellido());
+                            pago.setRegistradoPorCargo(obtenerCargoActual(solicitanteId));
+                        }
+                    }
                     pagoRepository.save(pago);
 
                     cuota.setEstado(EstadoCuota.PAGADO);
@@ -217,5 +236,12 @@ public class MercadoPagoService {
     private boolean esDirectivo(Integer usuarioId) {
         return usuarioRolRepository.findRolesActivosByUsuarioId(usuarioId)
                 .stream().anyMatch(ur -> ur.getRol().getEsDirectivo());
+    }
+
+    private String obtenerCargoActual(Integer usuarioId) {
+        return usuarioRolRepository.findRolesActivosByUsuarioId(usuarioId).stream()
+                .filter(ur -> ur.getRol().getEsDirectivo())
+                .map(ur -> ur.getRol().getNombre())
+                .findFirst().orElse(null);
     }
 }

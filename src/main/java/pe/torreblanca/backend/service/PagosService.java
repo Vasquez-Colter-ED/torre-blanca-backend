@@ -322,6 +322,18 @@ public class PagosService {
         pago.setObservaciones(request.getObservaciones());
         pago.setEstado(EstadoPago.PENDIENTE_VERIFICACION);
         pago.setRegistradoPor(esDirectivo ? "DIRECTIVO" : "RESIDENTE");
+
+        // Snapshot de auditoría: si fue un directivo quién registró el pago
+        // manualmente, guardamos quién fue exactamente, con qué nombre y
+        // qué cargo tenía en ESE momento (los directivos cambian cada periodo)
+        if (esDirectivo) {
+            Usuario registrante = usuarioRepository.findById(solicitanteId).orElse(null);
+            if (registrante != null) {
+                pago.setRegistradoPorUsuario(registrante);
+                pago.setRegistradoPorNombre(registrante.getNombre() + " " + registrante.getApellido());
+                pago.setRegistradoPorCargo(obtenerCargoActual(solicitanteId));
+            }
+        }
         pagoRepository.save(pago);
 
         String nombre = pagador.getNombre() + " " + pagador.getApellido();
@@ -359,6 +371,7 @@ public class PagosService {
             cuotaRepository.save(cuota);
 
             pago.setVerificadoPor(admin); pago.setFechaVerificacion(LocalDateTime.now());
+            pago.setVerificadoPorCargo(obtenerCargoActual(adminId));
             if (request.getObservaciones() != null) pago.setObservaciones(request.getObservaciones());
             pagoRepository.save(pago);
             boletasService.generarBoleta(pago, admin);
@@ -371,6 +384,7 @@ public class PagosService {
         } else if ("RECHAZAR".equals(request.getAccion())) {
             pago.setEstado(EstadoPago.RECHAZADO);
             pago.setVerificadoPor(admin); pago.setFechaVerificacion(LocalDateTime.now());
+            pago.setVerificadoPorCargo(obtenerCargoActual(adminId));
             if (request.getObservaciones() != null) pago.setObservaciones(request.getObservaciones());
             pagoRepository.save(pago);
             return new MensajeResponse("Pago rechazado correctamente", true);
@@ -409,6 +423,16 @@ public class PagosService {
     private boolean esDirectivo(Integer usuarioId) {
         return usuarioRolRepository.findRolesActivosByUsuarioId(usuarioId)
                 .stream().anyMatch(ur -> ur.getRol().getEsDirectivo());
+    }
+
+    // Devuelve el cargo directivo actual del usuario (PRESIDENTE/SECRETARIO/TESORERO)
+    // o null si no tiene ninguno. Se usa para tomar una "foto" del cargo en el
+    // momento exacto de la acción, ya que los directivos cambian cada cierto tiempo.
+    private String obtenerCargoActual(Integer usuarioId) {
+        return usuarioRolRepository.findRolesActivosByUsuarioId(usuarioId).stream()
+                .filter(ur -> ur.getRol().getEsDirectivo())
+                .map(ur -> ur.getRol().getNombre())
+                .findFirst().orElse(null);
     }
 
     private void verificarDirectivo(Integer usuarioId) {
@@ -504,6 +528,10 @@ public class PagosService {
         r.setFechaPago(p.getFechaPago()); r.setFechaVerificacion(p.getFechaVerificacion());
         if (p.getVerificadoPor() != null)
             r.setVerificadoPorNombre(p.getVerificadoPor().getNombre() + " " + p.getVerificadoPor().getApellido());
+        r.setVerificadoPorCargo(p.getVerificadoPorCargo());
+        r.setRegistradoPor(p.getRegistradoPor());
+        r.setRegistradoPorNombre(p.getRegistradoPorNombre());
+        r.setRegistradoPorCargo(p.getRegistradoPorCargo());
         r.setNumeroDepartamento(p.getCuota().getDepartamento().getNumero());
         r.setPiso(p.getCuota().getDepartamento().getPiso());
         return r;

@@ -19,4 +19,7 @@ public interface PagoMantenimientoRepository extends JpaRepository<PagoMantenimi
 
     @Query("SELECT p FROM PagoMantenimiento p WHERE p.estado = 'PENDIENTE_VERIFICACION' ORDER BY p.createdAt ASC")
     List<PagoMantenimiento> findPendientesVerificacion();
+
+    @Query("SELECT p FROM PagoMantenimiento p ORDER BY p.createdAt DESC")
+    List<PagoMantenimiento> findAllOrdenadoDesc();
 }

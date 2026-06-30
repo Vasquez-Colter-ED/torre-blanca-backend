@@ -47,8 +47,21 @@ public class PagoMantenimiento {
     private String registradoPor = "RESIDENTE";
 
     @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "registrado_por_id")
+    private Usuario registradoPorUsuario; // solo se llena cuando un directivo registra el pago manualmente
+
+    @Column(name = "registrado_por_nombre")
+    private String registradoPorNombre; // snapshot del nombre al momento del registro
+
+    @Column(name = "registrado_por_cargo")
+    private String registradoPorCargo; // snapshot del cargo (PRESIDENTE/SECRETARIO/TESORERO) al momento del registro
+
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "verificado_por")
     private Usuario verificadoPor;
+
+    @Column(name = "verificado_por_cargo")
+    private String verificadoPorCargo; // snapshot del cargo al momento de verificar
 
     @Column(name = "fecha_verificacion")
     private LocalDateTime fechaVerificacion;

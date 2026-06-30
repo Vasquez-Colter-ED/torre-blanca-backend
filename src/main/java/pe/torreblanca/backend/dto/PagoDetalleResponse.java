@@ -17,6 +17,10 @@ public class PagoDetalleResponse {
     private LocalDateTime fechaPago;
     private LocalDateTime fechaVerificacion;
     private String verificadoPorNombre;
+    private String verificadoPorCargo;
+    private String registradoPor;          // RESIDENTE / DIRECTIVO / SISTEMA
+    private String registradoPorNombre;     // qué directivo registró manualmente (si aplica)
+    private String registradoPorCargo;      // su cargo en el momento del registro
     // Info del departamento
     private String numeroDepartamento;
     private Integer piso;
