@@ -14,6 +14,7 @@ public class ResumenMesResponse {
     private BigDecimal totalPendiente;
     private Integer totalDepartamentos;
     private Integer pagados;
+    private Integer parciales;
     private Integer pendientes;
     private Integer vencidos;
     private List<CuotaDetalleResponse> cuotas;

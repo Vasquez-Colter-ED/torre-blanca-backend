@@ -25,6 +25,9 @@ public class CuotaMantenimiento {
     @Column(name = "monto_calculado")
     private BigDecimal montoCalculado;
 
+    @Column(name = "monto_pagado", precision = 10, scale = 2)
+    private BigDecimal montoPagado = BigDecimal.ZERO;
+
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "responsable_pago_id")
     private Usuario responsablePago;

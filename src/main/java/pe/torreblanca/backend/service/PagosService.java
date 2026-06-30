@@ -227,8 +227,11 @@ public class PagosService {
                 .orElseThrow(() -> new RuntimeException("No hay configuración para " + mes + "/" + anio));
         List<CuotaMantenimiento> cuotas = cuotaRepository.findByConfiguracionId(config.getId());
         BigDecimal totalEsperado  = cuotas.stream().map(CuotaMantenimiento::getMontoCalculado).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal totalRecaudado = cuotas.stream().filter(c -> c.getEstado() == EstadoCuota.PAGADO).map(CuotaMantenimiento::getMontoCalculado).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalRecaudado = cuotas.stream()
+                .map(c -> c.getMontoPagado() != null ? c.getMontoPagado() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
         long pagados    = cuotas.stream().filter(c -> c.getEstado() == EstadoCuota.PAGADO).count();
+        long parciales  = cuotas.stream().filter(c -> c.getEstado() == EstadoCuota.PARCIAL).count();
         long pendientes = cuotas.stream().filter(c -> c.getEstado() == EstadoCuota.PENDIENTE).count();
         long vencidos   = cuotas.stream().filter(c -> c.getEstado() == EstadoCuota.VENCIDO).count();
         ResumenMesResponse resumen = new ResumenMesResponse();
@@ -237,7 +240,7 @@ public class PagosService {
         resumen.setTotalEsperado(totalEsperado); resumen.setTotalRecaudado(totalRecaudado);
         resumen.setTotalPendiente(totalEsperado.subtract(totalRecaudado));
         resumen.setTotalDepartamentos(cuotas.size());
-        resumen.setPagados((int) pagados); resumen.setPendientes((int) pendientes); resumen.setVencidos((int) vencidos);
+        resumen.setPagados((int) pagados); resumen.setParciales((int) parciales); resumen.setPendientes((int) pendientes); resumen.setVencidos((int) vencidos);
         resumen.setCuotas(cuotas.stream().map(this::toCuotaDetalle).collect(Collectors.toList()));
         return resumen;
     }
@@ -264,9 +267,15 @@ public class PagosService {
         CuotaMantenimiento cuota = cuotaRepository.findById(request.getCuotaId())
                 .orElseThrow(() -> new RuntimeException("Cuota no encontrada"));
         if (cuota.getEstado() == EstadoCuota.PAGADO)
-            throw new RuntimeException("Esta cuota ya está pagada");
+            throw new RuntimeException("Esta cuota ya está pagada en su totalidad");
         if (request.getMonto() == null || request.getMonto().compareTo(BigDecimal.ZERO) <= 0)
             throw new RuntimeException("El monto debe ser mayor a cero");
+
+        BigDecimal yaPagado = cuota.getMontoPagado() != null ? cuota.getMontoPagado() : BigDecimal.ZERO;
+        BigDecimal saldoPendiente = cuota.getMontoCalculado().subtract(yaPagado);
+        if (request.getMonto().compareTo(saldoPendiente) > 0)
+            throw new RuntimeException("El monto ingresado (S/ " + request.getMonto() +
+                    ") supera el saldo pendiente de esta cuota (S/ " + saldoPendiente.setScale(2, java.math.RoundingMode.HALF_UP) + ")");
 
         ValidacionUtil.validarTextoLibre(request.getNumeroOperacion(), "El número de operación");
         ValidacionUtil.validarTextoLibre(request.getObservaciones(), "Las observaciones");
@@ -298,7 +307,13 @@ public class PagosService {
         pagoRepository.save(pago);
 
         String nombre = pagador.getNombre() + " " + pagador.getApellido();
-        return new MensajeResponse("Pago registrado a nombre de " + nombre + ". Pendiente de verificación.", true);
+        boolean esParcial = request.getMonto().compareTo(saldoPendiente) < 0;
+        String msg = esParcial
+            ? "Pago parcial de S/ " + request.getMonto() + " registrado a nombre de " + nombre +
+              ". Quedará un saldo pendiente de S/ " + saldoPendiente.subtract(request.getMonto()).setScale(2, java.math.RoundingMode.HALF_UP) +
+              " una vez verificado. Pendiente de verificación."
+            : "Pago registrado a nombre de " + nombre + ". Pendiente de verificación.";
+        return new MensajeResponse(msg, true);
     }
 
     public MensajeResponse verificarPago(Integer pagoId, VerificarPagoRequest request, Integer adminId) {
@@ -312,13 +327,29 @@ public class PagosService {
 
         if ("APROBAR".equals(request.getAccion())) {
             pago.setEstado(EstadoPago.VERIFICADO);
-            pago.getCuota().setEstado(EstadoCuota.PAGADO);
-            cuotaRepository.save(pago.getCuota());
+
+            CuotaMantenimiento cuota = pago.getCuota();
+            BigDecimal yaPagado = cuota.getMontoPagado() != null ? cuota.getMontoPagado() : BigDecimal.ZERO;
+            BigDecimal nuevoAcumulado = yaPagado.add(pago.getMonto());
+            cuota.setMontoPagado(nuevoAcumulado);
+
+            if (nuevoAcumulado.compareTo(cuota.getMontoCalculado()) >= 0) {
+                cuota.setEstado(EstadoCuota.PAGADO);
+            } else {
+                cuota.setEstado(EstadoCuota.PARCIAL);
+            }
+            cuotaRepository.save(cuota);
+
             pago.setVerificadoPor(admin); pago.setFechaVerificacion(LocalDateTime.now());
             if (request.getObservaciones() != null) pago.setObservaciones(request.getObservaciones());
             pagoRepository.save(pago);
             boletasService.generarBoleta(pago, admin);
-            return new MensajeResponse("Pago aprobado y boleta generada automáticamente", true);
+
+            String msg = cuota.getEstado() == EstadoCuota.PAGADO
+                ? "Pago aprobado y boleta generada automáticamente. Cuota completada."
+                : "Pago parcial aprobado y boleta generada. Saldo pendiente: S/ " +
+                  cuota.getMontoCalculado().subtract(nuevoAcumulado).setScale(2, java.math.RoundingMode.HALF_UP);
+            return new MensajeResponse(msg, true);
         } else if ("RECHAZAR".equals(request.getAccion())) {
             pago.setEstado(EstadoPago.RECHAZADO);
             pago.setVerificadoPor(admin); pago.setFechaVerificacion(LocalDateTime.now());
@@ -433,6 +464,9 @@ public class PagosService {
         r.setPiso(c.getDepartamento().getPiso());
         r.setMetrosCuadrados(c.getDepartamento().getMetrosCuadrados());
         r.setMontoCalculado(c.getMontoCalculado());
+        BigDecimal pagado = c.getMontoPagado() != null ? c.getMontoPagado() : BigDecimal.ZERO;
+        r.setMontoPagado(pagado);
+        r.setSaldoPendiente(c.getMontoCalculado().subtract(pagado).setScale(2, java.math.RoundingMode.HALF_UP));
         r.setMes(c.getConfiguracion().getMes());
         r.setAnio(c.getConfiguracion().getAnio());
         r.setEstadoCuota(c.getEstado().name());

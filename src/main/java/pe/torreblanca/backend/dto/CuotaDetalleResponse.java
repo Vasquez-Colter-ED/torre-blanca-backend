@@ -12,6 +12,8 @@ public class CuotaDetalleResponse {
     private Integer piso;
     private BigDecimal metrosCuadrados;
     private BigDecimal montoCalculado;
+    private BigDecimal montoPagado;
+    private BigDecimal saldoPendiente;
     private Integer mes;
     private Integer anio;
     private String estadoCuota;
