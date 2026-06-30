@@ -138,7 +138,9 @@ public class PagosService {
 
         ConfiguracionMantenimiento config = new ConfiguracionMantenimiento();
         config.setMes(request.getMes()); config.setAnio(request.getAnio());
-        config.setCostoPorM2(request.getCostoPorM2());
+        // costo_por_m2 es NOT NULL en BD por diseño original — si se usa
+        // PORCENTAJE no aplica, guardamos 0 para no romper el insert
+        config.setCostoPorM2(request.getCostoPorM2() != null ? request.getCostoPorM2() : BigDecimal.ZERO);
         config.setTotalMensual(request.getTotalMensual());
         config.setTipoCalculo(tipo);
         config.setTotalGastosEstimados(request.getTotalGastosEstimados());
@@ -234,6 +236,10 @@ public class PagosService {
         long parciales  = cuotas.stream().filter(c -> c.getEstado() == EstadoCuota.PARCIAL).count();
         long pendientes = cuotas.stream().filter(c -> c.getEstado() == EstadoCuota.PENDIENTE).count();
         long vencidos   = cuotas.stream().filter(c -> c.getEstado() == EstadoCuota.VENCIDO).count();
+        long enVerificacion = cuotas.stream()
+                .filter(c -> pagoRepository.findByCuotaId(c.getId()).stream()
+                        .anyMatch(p -> p.getEstado() == EstadoPago.PENDIENTE_VERIFICACION))
+                .count();
         ResumenMesResponse resumen = new ResumenMesResponse();
         resumen.setMes(mes); resumen.setAnio(anio);
         resumen.setCostoPorM2(config.getCostoPorM2());
@@ -241,6 +247,7 @@ public class PagosService {
         resumen.setTotalPendiente(totalEsperado.subtract(totalRecaudado));
         resumen.setTotalDepartamentos(cuotas.size());
         resumen.setPagados((int) pagados); resumen.setParciales((int) parciales); resumen.setPendientes((int) pendientes); resumen.setVencidos((int) vencidos);
+        resumen.setEnVerificacion((int) enVerificacion);
         resumen.setCuotas(cuotas.stream().map(this::toCuotaDetalle).collect(Collectors.toList()));
         return resumen;
     }

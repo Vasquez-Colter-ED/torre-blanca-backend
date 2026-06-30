@@ -17,5 +17,6 @@ public class ResumenMesResponse {
     private Integer parciales;
     private Integer pendientes;
     private Integer vencidos;
+    private Integer enVerificacion;
     private List<CuotaDetalleResponse> cuotas;
 }
