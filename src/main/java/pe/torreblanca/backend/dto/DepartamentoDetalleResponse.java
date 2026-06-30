@@ -20,3 +20,4 @@ public class DepartamentoDetalleResponse {
     private Integer propietarioAsignacionId; // ID del registro en propietarios_departamentos
     private List<InquilinoInfo> inquilinos;
     private List<CocheraInfo> cocheras;
+}
