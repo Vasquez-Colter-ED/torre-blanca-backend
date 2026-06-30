@@ -23,7 +23,10 @@ public class ConfiguracionMantenimiento {
     @Column(name = "total_mensual")
     private BigDecimal totalMensual;
 
-    // COSTO_M2 (clásico) o PORCENTAJE (alicuota)
+    @Column(name = "monto_fijo")
+    private BigDecimal montoFijo;
+
+    // COSTO_M2 (clásico) / PORCENTAJE (alicuota) / MONTO_FIJO (todos pagan igual)
     @Column(name = "tipo_calculo")
     private String tipoCalculo = "COSTO_M2";
 

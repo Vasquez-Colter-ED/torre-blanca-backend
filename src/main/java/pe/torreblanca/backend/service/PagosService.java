@@ -129,6 +129,9 @@ public class PagosService {
         if ("PORCENTAJE".equals(tipo)) {
             if (request.getTotalMensual() == null || request.getTotalMensual().compareTo(BigDecimal.ZERO) <= 0)
                 throw new RuntimeException("El monto total mensual debe ser mayor a cero");
+        } else if ("MONTO_FIJO".equals(tipo)) {
+            if (request.getMontoFijo() == null || request.getMontoFijo().compareTo(BigDecimal.ZERO) <= 0)
+                throw new RuntimeException("El monto fijo por departamento debe ser mayor a cero");
         } else {
             if (request.getCostoPorM2() == null || request.getCostoPorM2().compareTo(BigDecimal.ZERO) <= 0)
                 throw new RuntimeException("El costo por m² debe ser mayor a cero");
@@ -139,9 +142,10 @@ public class PagosService {
         ConfiguracionMantenimiento config = new ConfiguracionMantenimiento();
         config.setMes(request.getMes()); config.setAnio(request.getAnio());
         // costo_por_m2 es NOT NULL en BD por diseño original — si se usa
-        // PORCENTAJE no aplica, guardamos 0 para no romper el insert
+        // otra fórmula no aplica, guardamos 0 para no romper el insert
         config.setCostoPorM2(request.getCostoPorM2() != null ? request.getCostoPorM2() : BigDecimal.ZERO);
         config.setTotalMensual(request.getTotalMensual());
+        config.setMontoFijo(request.getMontoFijo());
         config.setTipoCalculo(tipo);
         config.setTotalGastosEstimados(request.getTotalGastosEstimados());
         config.setObservaciones(request.getObservaciones());
@@ -166,6 +170,9 @@ public class PagosService {
                 BigDecimal pctTotal = pctDepto.add(pctCocheras);
                 monto = pctTotal.divide(new BigDecimal("100"), 2, java.math.RoundingMode.HALF_UP)
                         .multiply(request.getTotalMensual());
+            } else if ("MONTO_FIJO".equals(tipo)) {
+                // Todos los departamentos pagan exactamente el mismo monto
+                monto = request.getMontoFijo();
             } else {
                 // Método clásico: metros × costo_m2
                 monto = depto.getMetrosCuadrados() != null
@@ -189,16 +196,26 @@ public class PagosService {
 
         ConfiguracionMantenimiento config = configuracionRepository.findById(configId)
                 .orElseThrow(() -> new RuntimeException("Configuración no encontrada"));
-        if (request.getCostoPorM2() != null) {
-            if (request.getCostoPorM2().compareTo(BigDecimal.ZERO) <= 0)
+
+        // Si no se especifica tipoCalculo, se mantiene el que ya tenía la config
+        String tipo = request.getTipoCalculo() != null ? request.getTipoCalculo() : config.getTipoCalculo();
+
+        if ("PORCENTAJE".equals(tipo)) {
+            if (request.getTotalMensual() == null || request.getTotalMensual().compareTo(BigDecimal.ZERO) <= 0)
+                throw new RuntimeException("El monto total mensual debe ser mayor a cero");
+        } else if ("MONTO_FIJO".equals(tipo)) {
+            if (request.getMontoFijo() == null || request.getMontoFijo().compareTo(BigDecimal.ZERO) <= 0)
+                throw new RuntimeException("El monto fijo por departamento debe ser mayor a cero");
+        } else {
+            if (request.getCostoPorM2() == null || request.getCostoPorM2().compareTo(BigDecimal.ZERO) <= 0)
                 throw new RuntimeException("El costo por m² debe ser mayor a cero");
-            config.setCostoPorM2(request.getCostoPorM2());
-            List<CuotaMantenimiento> cuotas = cuotaRepository.findByConfiguracionId(configId);
-            for (CuotaMantenimiento cuota : cuotas) {
-                cuota.setMontoCalculado(cuota.getDepartamento().getMetrosCuadrados().multiply(request.getCostoPorM2()));
-                cuotaRepository.save(cuota);
-            }
         }
+
+        config.setTipoCalculo(tipo);
+        if (request.getCostoPorM2()   != null) config.setCostoPorM2(request.getCostoPorM2());
+        if (request.getTotalMensual() != null) config.setTotalMensual(request.getTotalMensual());
+        if (request.getMontoFijo()    != null) config.setMontoFijo(request.getMontoFijo());
+
         if (request.getTotalGastosEstimados() != null) {
             if (request.getTotalGastosEstimados().compareTo(BigDecimal.ZERO) < 0)
                 throw new RuntimeException("El total de gastos estimados no puede ser negativo");
@@ -206,7 +223,39 @@ public class PagosService {
         }
         if (request.getObservaciones() != null) config.setObservaciones(request.getObservaciones());
         configuracionRepository.save(config);
-        return new MensajeResponse("Configuración actualizada correctamente", true);
+
+        // Recalcula TODAS las cuotas de ese mes según la fórmula vigente
+        // (sea la misma de antes o una nueva, si el directivo la cambió)
+        List<CuotaMantenimiento> cuotas = cuotaRepository.findByConfiguracionId(configId);
+        for (CuotaMantenimiento cuota : cuotas) {
+            Departamento depto = cuota.getDepartamento();
+            BigDecimal monto;
+            if ("PORCENTAJE".equals(tipo)) {
+                BigDecimal pctDepto = depto.getPorcentaje() != null ? depto.getPorcentaje() : BigDecimal.ZERO;
+                BigDecimal pctCocheras = cocheraDeptoRepository.findActivasByDepartamentoId(depto.getId())
+                        .stream()
+                        .map(cd -> cd.getCochera().getPorcentaje() != null ? cd.getCochera().getPorcentaje() : BigDecimal.ZERO)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+                BigDecimal pctTotal = pctDepto.add(pctCocheras);
+                monto = pctTotal.divide(new BigDecimal("100"), 2, java.math.RoundingMode.HALF_UP)
+                        .multiply(config.getTotalMensual());
+            } else if ("MONTO_FIJO".equals(tipo)) {
+                monto = config.getMontoFijo();
+            } else {
+                monto = depto.getMetrosCuadrados() != null
+                        ? depto.getMetrosCuadrados().multiply(config.getCostoPorM2())
+                        : BigDecimal.ZERO;
+            }
+            cuota.setMontoCalculado(monto.setScale(2, java.math.RoundingMode.HALF_UP));
+            // Si ya había algún pago verificado, mantenemos el estado según el nuevo total
+            BigDecimal pagado = cuota.getMontoPagado() != null ? cuota.getMontoPagado() : BigDecimal.ZERO;
+            if (pagado.compareTo(BigDecimal.ZERO) > 0) {
+                cuota.setEstado(pagado.compareTo(cuota.getMontoCalculado()) >= 0 ? EstadoCuota.PAGADO : EstadoCuota.PARCIAL);
+            }
+            cuotaRepository.save(cuota);
+        }
+
+        return new MensajeResponse("Configuración actualizada y " + cuotas.size() + " cuotas recalculadas", true);
     }
 
     public MensajeResponse eliminarConfiguracion(Integer configId, Integer adminId) {
