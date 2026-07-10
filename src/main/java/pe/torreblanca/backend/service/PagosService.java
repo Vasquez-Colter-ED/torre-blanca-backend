@@ -11,7 +11,9 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -29,6 +31,7 @@ public class PagosService {
     @Autowired private InquilinoDepartamentoRepository inquilinoDeptoRepository;
     @Autowired private UsuarioRolRepository usuarioRolRepository;
     @Autowired private BoletasService boletasService;
+    @Autowired private AuditoriaService auditoriaService;
 
     // ── Departamentos ─────────────────────────────────────────────────
 
@@ -49,6 +52,10 @@ public class PagosService {
         nueva.setUsuario(usuario); nueva.setDepartamento(departamento);
         nueva.setFechaInicio(LocalDate.now()); nueva.setEstado(true);
         propietarioDeptoRepository.save(nueva);
+        Map<String, Object> datosProp = new LinkedHashMap<>();
+        datosProp.put("departamento", departamento.getNumero());
+        datosProp.put("usuario", usuario.getNombre() + " " + usuario.getApellido());
+        auditoriaService.registrar(adminId, "Propietario asignado", "propietarios_departamentos", nueva.getId(), null, datosProp);
         return new MensajeResponse("Propietario asignado al departamento " + departamento.getNumero(), true);
     }
 
@@ -71,6 +78,10 @@ public class PagosService {
         inq.setUsuario(usuario); inq.setDepartamento(departamento);
         inq.setPropietario(propietario); inq.setFechaInicio(LocalDate.now()); inq.setEstado(true);
         inquilinoDeptoRepository.save(inq);
+        Map<String, Object> datosInq = new LinkedHashMap<>();
+        datosInq.put("departamento", departamento.getNumero());
+        datosInq.put("usuario", usuario.getNombre() + " " + usuario.getApellido());
+        auditoriaService.registrar(adminId, "Inquilino asignado", "inquilinos_departamentos", inq.getId(), null, datosInq);
         return new MensajeResponse("Inquilino asignado al departamento " + departamento.getNumero(), true);
     }
 
@@ -80,6 +91,7 @@ public class PagosService {
                 .orElseThrow(() -> new RuntimeException("Registro no encontrado"));
         pd.setEstado(false); pd.setFechaFin(LocalDate.now());
         propietarioDeptoRepository.save(pd);
+        auditoriaService.registrar(adminId, "Propietario desvinculado", "propietarios_departamentos", propietarioDeptoId);
         return new MensajeResponse("Propietario desvinculado del departamento", true);
     }
 
@@ -89,6 +101,7 @@ public class PagosService {
                 .orElseThrow(() -> new RuntimeException("Registro no encontrado"));
         inq.setEstado(false); inq.setFechaFin(LocalDate.now());
         inquilinoDeptoRepository.save(inq);
+        auditoriaService.registrar(adminId, "Inquilino removido", "inquilinos_departamentos", inquilinoDeptoId);
         return new MensajeResponse("Inquilino removido del departamento", true);
     }
 
@@ -186,6 +199,14 @@ public class PagosService {
             cuota.setFechaVencimiento(vencimiento);
             cuotaRepository.save(cuota);
         }
+
+        Map<String, Object> datosConfig = new LinkedHashMap<>();
+        datosConfig.put("mes", request.getMes());
+        datosConfig.put("anio", request.getAnio());
+        datosConfig.put("tipoCalculo", tipo);
+        datosConfig.put("deptosAfectados", departamentos.size());
+        auditoriaService.registrar(adminId, "Configuración de mantenimiento creada", "configuracion_mantenimiento", savedConfig.getId(), null, datosConfig);
+
         return new MensajeResponse("Configuración creada y " + departamentos.size() + " cuotas generadas", true);
     }
 
@@ -196,6 +217,12 @@ public class PagosService {
 
         ConfiguracionMantenimiento config = configuracionRepository.findById(configId)
                 .orElseThrow(() -> new RuntimeException("Configuración no encontrada"));
+
+        Map<String, Object> antesConfig = new LinkedHashMap<>();
+        antesConfig.put("tipoCalculo", config.getTipoCalculo());
+        antesConfig.put("costoPorM2", config.getCostoPorM2());
+        antesConfig.put("totalMensual", config.getTotalMensual());
+        antesConfig.put("montoFijo", config.getMontoFijo());
 
         // Si no se especifica tipoCalculo, se mantiene el que ya tenía la config
         String tipo = request.getTipoCalculo() != null ? request.getTipoCalculo() : config.getTipoCalculo();
@@ -255,6 +282,13 @@ public class PagosService {
             cuotaRepository.save(cuota);
         }
 
+        Map<String, Object> despuesConfig = new LinkedHashMap<>();
+        despuesConfig.put("tipoCalculo", config.getTipoCalculo());
+        despuesConfig.put("costoPorM2", config.getCostoPorM2());
+        despuesConfig.put("totalMensual", config.getTotalMensual());
+        despuesConfig.put("montoFijo", config.getMontoFijo());
+        auditoriaService.registrar(adminId, "Configuración de mantenimiento editada", "configuracion_mantenimiento", configId, antesConfig, despuesConfig);
+
         return new MensajeResponse("Configuración actualizada y " + cuotas.size() + " cuotas recalculadas", true);
     }
 
@@ -262,12 +296,17 @@ public class PagosService {
         verificarDirectivo(adminId);
         ConfiguracionMantenimiento config = configuracionRepository.findById(configId)
                 .orElseThrow(() -> new RuntimeException("Configuración no encontrada"));
+        Map<String, Object> antesElim = new LinkedHashMap<>();
+        antesElim.put("mes", config.getMes());
+        antesElim.put("anio", config.getAnio());
+        antesElim.put("tipoCalculo", config.getTipoCalculo());
         List<CuotaMantenimiento> cuotas = cuotaRepository.findByConfiguracionId(configId);
         for (CuotaMantenimiento cuota : cuotas) {
             pagoRepository.findByCuotaId(cuota.getId()).forEach(pagoRepository::delete);
             cuotaRepository.delete(cuota);
         }
         configuracionRepository.delete(config);
+        auditoriaService.registrar(adminId, "Configuración de mantenimiento eliminada", "configuracion_mantenimiento", configId, antesElim, null);
         return new MensajeResponse("Configuración y cuotas eliminadas correctamente", true);
     }
 
@@ -534,6 +573,7 @@ public class PagosService {
         cd.setCochera(cochera); cd.setDepartamento(depto);
         cd.setFechaInicio(LocalDate.now()); cd.setEstado(true);
         cocheraDeptoRepository.save(cd);
+        auditoriaService.registrar(adminId, "Cochera asignada", "cocheras_departamentos", cd.getId());
         return new MensajeResponse("Cochera " + cochera.getNumero() + " asignada al Depto " + depto.getNumero(), true);
     }
 
@@ -544,6 +584,7 @@ public class PagosService {
                 .orElseThrow(() -> new RuntimeException("Asignación no encontrada"));
         cd.setEstado(false); cd.setFechaFin(LocalDate.now());
         cocheraDeptoRepository.save(cd);
+        auditoriaService.registrar(adminId, "Cochera desvinculada", "cocheras_departamentos", asignacionId);
         return new MensajeResponse("Cochera desvinculada del departamento", true);
     }
 

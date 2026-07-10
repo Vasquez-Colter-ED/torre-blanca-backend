@@ -16,6 +16,9 @@ public class ReportesMesResponse {
     private BigDecimal balance;
     private Integer deptosPagados;
     private Integer deptosTotal;
+    // Desglose caja efectivo vs digital (transferencias, depósitos, Yape, Plin, otros)
+    private BigDecimal recaudadoEfectivo;
+    private BigDecimal recaudadoDigital;
     // Deudores
     private List<DeudorInfo> deudores;
     // Gastos por categoría

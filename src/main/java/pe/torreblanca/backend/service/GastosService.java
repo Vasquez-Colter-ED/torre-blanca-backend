@@ -9,7 +9,9 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -19,6 +21,7 @@ public class GastosService {
     @Autowired private CategoriaGastoRepository categoriaRepository;
     @Autowired private UsuarioRepository usuarioRepository;
     @Autowired private UsuarioRolRepository usuarioRolRepository;
+    @Autowired private AuditoriaService auditoriaService;
 
     public List<GastoResponse> listarTodos() {
         return gastoRepository.findAllOrdenados().stream()
@@ -62,7 +65,15 @@ public class GastosService {
         gasto.setComprobanteUrl(request.getComprobanteUrl());
         gasto.setRegistradoPor(admin);
 
-        return toResponse(gastoRepository.save(gasto));
+        Gasto guardado = gastoRepository.save(gasto);
+
+        Map<String, Object> datos = new LinkedHashMap<>();
+        datos.put("categoria", categoria.getNombre());
+        datos.put("monto", guardado.getMonto());
+        datos.put("fechaGasto", guardado.getFechaGasto().toString());
+        auditoriaService.registrar(adminId, "Gasto registrado", "gastos", guardado.getId(), null, datos);
+
+        return toResponse(guardado);
     }
 
     public GastoResponse editar(Integer id, GastoRequest request, Integer adminId) {
@@ -77,6 +88,11 @@ public class GastosService {
         CategoriaGasto categoria = categoriaRepository.findById(request.getCategoriaId())
                 .orElseThrow(() -> new RuntimeException("Categoría no encontrada"));
 
+        Map<String, Object> antes = new LinkedHashMap<>();
+        antes.put("categoria", gasto.getCategoria().getNombre());
+        antes.put("monto", gasto.getMonto());
+        antes.put("fechaGasto", gasto.getFechaGasto().toString());
+
         LocalDate fecha = LocalDate.parse(request.getFechaGasto());
         gasto.setCategoria(categoria);
         gasto.setDescripcion(request.getDescripcion());
@@ -86,14 +102,29 @@ public class GastosService {
         gasto.setAnio(fecha.getYear());
         gasto.setComprobanteUrl(request.getComprobanteUrl());
 
-        return toResponse(gastoRepository.save(gasto));
+        Gasto guardado = gastoRepository.save(gasto);
+
+        Map<String, Object> despues = new LinkedHashMap<>();
+        despues.put("categoria", categoria.getNombre());
+        despues.put("monto", guardado.getMonto());
+        despues.put("fechaGasto", guardado.getFechaGasto().toString());
+        auditoriaService.registrar(adminId, "Gasto editado", "gastos", guardado.getId(), antes, despues);
+
+        return toResponse(guardado);
     }
 
     public MensajeResponse eliminar(Integer id, Integer adminId) {
         verificarDirectivo(adminId);
         Gasto gasto = gastoRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Gasto no encontrado"));
+
+        Map<String, Object> antes = new LinkedHashMap<>();
+        antes.put("categoria", gasto.getCategoria().getNombre());
+        antes.put("monto", gasto.getMonto());
+        antes.put("fechaGasto", gasto.getFechaGasto().toString());
+
         gastoRepository.delete(gasto);
+        auditoriaService.registrar(adminId, "Gasto eliminado", "gastos", id, antes, null);
         return new MensajeResponse("Gasto eliminado correctamente", true);
     }
 

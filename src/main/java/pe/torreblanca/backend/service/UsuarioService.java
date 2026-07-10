@@ -11,7 +11,9 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -27,6 +29,7 @@ public class UsuarioService {
     @Autowired private PropietarioDepartamentoRepository propietarioDeptoRepository;
     @Autowired private InquilinoDepartamentoRepository inquilinoDeptoRepository;
     @Autowired private DepartamentoRepository departamentoRepository;
+    @Autowired private AuditoriaService auditoriaService;
 
     public List<UsuarioResponse> listarTodos() {
         return usuarioRepository.findAll().stream().map(this::toResponse).collect(Collectors.toList());
@@ -128,6 +131,14 @@ public class UsuarioService {
         if (request.getCargoDirectivoId() != null)
             asignarRol(guardado.getId(), request.getCargoDirectivoId(), adminId);
 
+        Map<String, Object> datosNuevos = new LinkedHashMap<>();
+        datosNuevos.put("nombre", guardado.getNombre() + " " + guardado.getApellido());
+        datosNuevos.put("email", guardado.getEmail());
+        datosNuevos.put("dni", guardado.getDni());
+        datosNuevos.put("departamento", depto.getNumero());
+        datosNuevos.put("tipoResidencia", tipo);
+        auditoriaService.registrar(adminId, "Usuario creado", "usuarios", guardado.getId(), null, datosNuevos);
+
         return toResponse(guardado);
     }
 
@@ -138,6 +149,12 @@ public class UsuarioService {
 
         Usuario usuario = usuarioRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+
+        Map<String, Object> antes = new LinkedHashMap<>();
+        antes.put("nombre", usuario.getNombre() + " " + usuario.getApellido());
+        antes.put("telefono", usuario.getTelefono());
+        antes.put("dni", usuario.getDni());
+        antes.put("email", usuario.getEmail());
 
         if (request.getNombre() != null) {
             ValidacionUtil.validarNombre(request.getNombre(), "El nombre");
@@ -211,7 +228,16 @@ public class UsuarioService {
             }
         }
 
-        return toResponse(usuarioRepository.save(usuario));
+        Usuario guardado = usuarioRepository.save(usuario);
+
+        Map<String, Object> despues = new LinkedHashMap<>();
+        despues.put("nombre", guardado.getNombre() + " " + guardado.getApellido());
+        despues.put("telefono", guardado.getTelefono());
+        despues.put("dni", guardado.getDni());
+        despues.put("email", guardado.getEmail());
+        auditoriaService.registrar(solicitanteId, "Usuario editado", "usuarios", guardado.getId(), antes, despues);
+
+        return toResponse(guardado);
     }
 
     public MensajeResponse desactivar(Integer id, Integer solicitanteId) {
@@ -222,6 +248,7 @@ public class UsuarioService {
         if (esDirectivo(id)) throw new RuntimeException("No puedes desactivar a un directivo");
         usuario.setEstado(EstadoUsuario.INACTIVO);
         usuarioRepository.save(usuario);
+        auditoriaService.registrar(solicitanteId, "Usuario desactivado", "usuarios", id);
         return new MensajeResponse("Usuario desactivado correctamente", true);
     }
 
@@ -231,6 +258,7 @@ public class UsuarioService {
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
         usuario.setEstado(EstadoUsuario.ACTIVO);
         usuarioRepository.save(usuario);
+        auditoriaService.registrar(solicitanteId, "Usuario reactivado", "usuarios", id);
         return new MensajeResponse("Usuario reactivado correctamente", true);
     }
 
@@ -267,6 +295,7 @@ public class UsuarioService {
         if (rol.getEsDirectivo()) nuevoRol.setFechaFin(LocalDate.now().plusYears(4));
         usuarioRolRepository.save(nuevoRol);
         eliminarPermisosExtra(usuarioId);
+        auditoriaService.registrar(adminId, "Rol asignado: " + rol.getNombre(), "usuarios_roles", usuarioId);
         return new MensajeResponse("Rol asignado y permisos extra reiniciados", true);
     }
 
@@ -288,6 +317,7 @@ public class UsuarioService {
                 .filter(ur -> ur.getRol().getId().equals(rolId))
                 .forEach(ur -> { ur.setEstado(false); usuarioRolRepository.save(ur); });
         eliminarPermisosExtra(usuarioId);
+        auditoriaService.registrar(adminId, "Rol revocado: " + rol.getNombre(), "usuarios_roles", usuarioId);
         return new MensajeResponse("Rol revocado y permisos extra eliminados", true);
     }
 
@@ -303,6 +333,10 @@ public class UsuarioService {
         up.setUsuario(usuario); up.setModulo(modulo); up.setPermiso(permiso);
         up.setOtorgadoPor(adminId); up.setFechaOtorgado(LocalDateTime.now()); up.setEstado(true);
         usuarioPermisoRepository.save(up);
+        Map<String, Object> datosPermiso = new LinkedHashMap<>();
+        datosPermiso.put("modulo", modulo.getNombre());
+        datosPermiso.put("permiso", permiso.getNombre());
+        auditoriaService.registrar(adminId, "Permiso extra otorgado", "usuarios_permisos", usuarioId, null, datosPermiso);
         return new MensajeResponse("Permiso asignado correctamente", true);
     }
 
@@ -312,6 +346,7 @@ public class UsuarioService {
                 .orElseThrow(() -> new RuntimeException("Permiso no encontrado"));
         up.setEstado(false);
         usuarioPermisoRepository.save(up);
+        auditoriaService.registrar(adminId, "Permiso extra revocado", "usuarios_permisos", up.getUsuario().getId());
         return new MensajeResponse("Permiso revocado correctamente", true);
     }
 

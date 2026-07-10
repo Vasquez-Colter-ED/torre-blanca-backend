@@ -20,5 +20,7 @@ public class ReportesAnioResponse {
         private BigDecimal balance;
         private Integer pagados;
         private Integer total;
+        private BigDecimal recaudadoEfectivo;
+        private BigDecimal recaudadoDigital;
     }
 }

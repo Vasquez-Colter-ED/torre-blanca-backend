@@ -58,6 +58,18 @@ public class ReportesService {
 
         BigDecimal gastos = gastoRepository.sumByMesAndAnio(mes, anio);
 
+        // Desglose de caja: efectivo vs digital (transferencia/depósito/Yape/Plin/otro),
+        // solo sobre pagos ya VERIFICADOS de ese mes
+        List<PagoMantenimiento> pagosMes = pagoRepository.findByMesAndAnio(mes, anio);
+        BigDecimal recEfectivo = pagosMes.stream()
+                .filter(p -> p.getEstado() == EstadoPago.VERIFICADO && p.getMetodoPago() == MetodoPago.EFECTIVO)
+                .map(PagoMantenimiento::getMonto).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal recDigital = pagosMes.stream()
+                .filter(p -> p.getEstado() == EstadoPago.VERIFICADO && p.getMetodoPago() != MetodoPago.EFECTIVO)
+                .map(PagoMantenimiento::getMonto).reduce(BigDecimal.ZERO, BigDecimal::add);
+        r.setRecaudadoEfectivo(recEfectivo);
+        r.setRecaudadoDigital(recDigital);
+
         // Gastos por categoría
         Map<String, BigDecimal> porCategoria = new LinkedHashMap<>();
         gastoRepository.findByMesAndAnio(mes, anio).forEach(g -> {
@@ -94,6 +106,14 @@ public class ReportesService {
             BigDecimal gastMes = gastoRepository.sumByMesAndAnio(m, anio);
             int pagados = 0, total = 0;
 
+            List<PagoMantenimiento> pagosDelMes = pagoRepository.findByMesAndAnio(m, anio);
+            BigDecimal recEfectivoMes = pagosDelMes.stream()
+                    .filter(p -> p.getEstado() == EstadoPago.VERIFICADO && p.getMetodoPago() == MetodoPago.EFECTIVO)
+                    .map(PagoMantenimiento::getMonto).reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal recDigitalMes = pagosDelMes.stream()
+                    .filter(p -> p.getEstado() == EstadoPago.VERIFICADO && p.getMetodoPago() != MetodoPago.EFECTIVO)
+                    .map(PagoMantenimiento::getMonto).reduce(BigDecimal.ZERO, BigDecimal::add);
+
             if (configOpt.isPresent()) {
                 List<CuotaMantenimiento> cuotas = cuotaRepository.findByConfiguracionId(configOpt.get().getId());
                 total = cuotas.size();
@@ -112,6 +132,8 @@ public class ReportesService {
             dato.setBalance(recMes.subtract(gastMes));
             dato.setPagados(pagados);
             dato.setTotal(total);
+            dato.setRecaudadoEfectivo(recEfectivoMes);
+            dato.setRecaudadoDigital(recDigitalMes);
             datos.add(dato);
 
             totalRecAnio  = totalRecAnio.add(recMes);
