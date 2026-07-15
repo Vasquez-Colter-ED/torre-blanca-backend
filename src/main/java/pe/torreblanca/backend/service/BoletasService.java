@@ -6,9 +6,12 @@ import pe.torreblanca.backend.repository.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -21,6 +24,8 @@ public class BoletasService {
     @Autowired private BoletaRepository boletaRepository;
     @Autowired private PagoMantenimientoRepository pagoRepository;
     @Autowired private UsuarioRolRepository usuarioRolRepository;
+    @Autowired private PropietarioDepartamentoRepository propietarioDeptoRepository;
+    @Autowired private InquilinoDepartamentoRepository inquilinoDeptoRepository;
 
     // Genera boleta automáticamente al aprobar un pago
     public Boleta generarBoleta(PagoMantenimiento pago, Usuario emitidaPor) {
@@ -46,9 +51,28 @@ public class BoletasService {
                 .map(this::toResponse).collect(Collectors.toList());
     }
 
-    // Boletas del residente logueado
+    // Boletas visibles para un residente: todas las de SU departamento
+    // (sin importar quién pagó cada una — padre, hijo, quien sea) desde
+    // el mes en que se vinculó a ese depto en adelante. Así, si otra
+    // persona del mismo departamento pagó una cuota, también la ve —
+    // y sabe quién la pagó porque la boleta ya trae el nombre del pagador.
     public List<BoletaResponse> misBoletas(Integer usuarioId) {
-        return boletaRepository.findByPagadorId(usuarioId).stream()
+        Map<Integer, LocalDate> deptosConFecha = new LinkedHashMap<>();
+        propietarioDeptoRepository.findActivosByUsuarioId(usuarioId).forEach(pd ->
+                deptosConFecha.put(pd.getDepartamento().getId(), pd.getFechaInicio()));
+        inquilinoDeptoRepository.findActivosByUsuarioId(usuarioId).forEach(inq ->
+                deptosConFecha.put(inq.getDepartamento().getId(), inq.getFechaInicio()));
+        if (deptosConFecha.isEmpty()) return List.of();
+
+        return boletaRepository.findAllOrdenadas().stream()
+                .filter(b -> {
+                    Integer deptoId = b.getPago().getCuota().getDepartamento().getId();
+                    LocalDate desde = deptosConFecha.get(deptoId);
+                    if (desde == null) return false; // no vinculado a ese depto
+                    int mes  = b.getPago().getCuota().getConfiguracion().getMes();
+                    int anio = b.getPago().getCuota().getConfiguracion().getAnio();
+                    return anio > desde.getYear() || (anio == desde.getYear() && mes >= desde.getMonthValue());
+                })
                 .map(this::toResponse).collect(Collectors.toList());
     }
 
