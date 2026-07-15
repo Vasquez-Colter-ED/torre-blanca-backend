@@ -110,24 +110,25 @@ public class UsuarioService {
 
         // Asignar al departamento según tipo (solo si se especificó uno)
         if (depto != null) {
+            final Departamento deptoFinal = depto; // copia efectivamente final para la lambda de abajo
             if (tipo.equals("PROPIETARIO")) {
                 PropietarioDepartamento pd = new PropietarioDepartamento();
-                pd.setUsuario(guardado); pd.setDepartamento(depto);
+                pd.setUsuario(guardado); pd.setDepartamento(deptoFinal);
                 pd.setFechaInicio(LocalDate.now()); pd.setEstado(true);
                 propietarioDeptoRepository.save(pd);
             } else {
                 // Para inquilino buscamos al propietario activo del depto
-                propietarioDeptoRepository.findActivoByDepartamentoId(depto.getId()).ifPresent(propDep -> {
+                propietarioDeptoRepository.findActivoByDepartamentoId(deptoFinal.getId()).ifPresent(propDep -> {
                     InquilinoDepartamento inq = new InquilinoDepartamento();
-                    inq.setUsuario(guardado); inq.setDepartamento(depto);
+                    inq.setUsuario(guardado); inq.setDepartamento(deptoFinal);
                     inq.setPropietario(propDep.getUsuario());
                     inq.setFechaInicio(LocalDate.now()); inq.setEstado(true);
                     inquilinoDeptoRepository.save(inq);
                 });
-                if (propietarioDeptoRepository.findActivoByDepartamentoId(depto.getId()).isEmpty()) {
+                if (propietarioDeptoRepository.findActivoByDepartamentoId(deptoFinal.getId()).isEmpty()) {
                     // Sin propietario aún, lo guardamos igual (propietario_id null)
                     InquilinoDepartamento inq = new InquilinoDepartamento();
-                    inq.setUsuario(guardado); inq.setDepartamento(depto);
+                    inq.setUsuario(guardado); inq.setDepartamento(deptoFinal);
                     inq.setFechaInicio(LocalDate.now()); inq.setEstado(true);
                     inquilinoDeptoRepository.save(inq);
                 }
