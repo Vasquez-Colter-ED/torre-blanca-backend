@@ -348,11 +348,25 @@ public class PagosService {
     }
 
     // ── Cuotas del usuario ────────────────────────────────────────────
-
+    // Solo muestra las cuotas desde el mes en que la persona se vinculó
+    // al departamento (como propietario o inquilino) en adelante — así
+    // un inquilino/propietario nuevo no hereda deudas ni crédito de
+    // períodos anteriores a su llegada.
     public List<CuotaDetalleResponse> obtenerMisCuotas(Integer usuarioId) {
-        List<Integer> deptoIds = obtenerDeptosDeUsuario(usuarioId);
+        Map<Integer, LocalDate> deptosConFecha = obtenerDeptosConFechaDeUsuario(usuarioId);
         List<CuotaMantenimiento> cuotas = new ArrayList<>();
-        for (Integer deptoId : deptoIds) cuotas.addAll(cuotaRepository.findByDepartamentoId(deptoId));
+        for (Map.Entry<Integer, LocalDate> entry : deptosConFecha.entrySet()) {
+            LocalDate desde = entry.getValue();
+            cuotaRepository.findByDepartamentoId(entry.getKey()).stream()
+                    .filter(c -> {
+                        if (desde == null) return true; // por si alguna asignación vieja no tiene fecha
+                        int cAnio = c.getConfiguracion().getAnio();
+                        int cMes  = c.getConfiguracion().getMes();
+                        // Incluye el mes exacto en que se vinculó, excluye los anteriores
+                        return cAnio > desde.getYear() || (cAnio == desde.getYear() && cMes >= desde.getMonthValue());
+                    })
+                    .forEach(cuotas::add);
+        }
         return cuotas.stream()
                 .sorted((a, b) -> {
                     int c = b.getConfiguracion().getAnio().compareTo(a.getConfiguracion().getAnio());
@@ -611,6 +625,17 @@ public class PagosService {
         propietarioDeptoRepository.findActivosByUsuarioId(usuarioId).forEach(pd -> ids.add(pd.getDepartamento().getId()));
         inquilinoDeptoRepository.findActivosByUsuarioId(usuarioId).forEach(id -> ids.add(id.getDepartamento().getId()));
         return ids;
+    }
+
+    // Igual que arriba, pero también devuelve desde cuándo está vinculado a
+    // cada depto — se usa para no mostrarle cuotas de antes de su llegada
+    private Map<Integer, LocalDate> obtenerDeptosConFechaDeUsuario(Integer usuarioId) {
+        Map<Integer, LocalDate> map = new LinkedHashMap<>();
+        propietarioDeptoRepository.findActivosByUsuarioId(usuarioId).forEach(pd ->
+                map.put(pd.getDepartamento().getId(), pd.getFechaInicio()));
+        inquilinoDeptoRepository.findActivosByUsuarioId(usuarioId).forEach(inq ->
+                map.put(inq.getDepartamento().getId(), inq.getFechaInicio()));
+        return map;
     }
 
     private List<String> obtenerResidentesDeDepto(Integer deptoId) {
