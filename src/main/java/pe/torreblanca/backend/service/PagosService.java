@@ -66,8 +66,14 @@ public class PagosService {
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
         Departamento departamento = departamentoRepository.findById(request.getDepartamentoId())
                 .orElseThrow(() -> new RuntimeException("Departamento no encontrado"));
-        Usuario propietario = usuarioRepository.findById(request.getPropietarioId())
-                .orElseThrow(() -> new RuntimeException("Propietario no encontrado"));
+
+        // El propietario es opcional: puede que el depto todavía no tenga uno
+        // asignado, y aun así se puede registrar un inquilino igual
+        Usuario propietario = null;
+        if (request.getPropietarioId() != null) {
+            propietario = usuarioRepository.findById(request.getPropietarioId())
+                    .orElseThrow(() -> new RuntimeException("Propietario no encontrado"));
+        }
 
         // Límite máximo de inquilinos por departamento
         long actuales = inquilinoDeptoRepository.findActivosByDepartamentoId(departamento.getId()).size();
