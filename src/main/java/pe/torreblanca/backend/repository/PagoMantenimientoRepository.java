@@ -14,6 +14,8 @@ public interface PagoMantenimientoRepository extends JpaRepository<PagoMantenimi
 
     List<PagoMantenimiento> findByPagadorId(Integer pagadorId);
 
+    List<PagoMantenimiento> findByLoteId(String loteId);
+
     @Query("SELECT p FROM PagoMantenimiento p WHERE p.cuota.configuracion.mes = :mes AND p.cuota.configuracion.anio = :anio ORDER BY p.createdAt DESC")
     List<PagoMantenimiento> findByMesAndAnio(Integer mes, Integer anio);
 

@@ -14,6 +14,10 @@ import java.util.stream.Collectors;
 @Service
 public class BoletasService {
 
+    private static final String[] NOMBRES_MESES_BOLETA = {
+        "Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"
+    };
+
     @Autowired private BoletaRepository boletaRepository;
     @Autowired private PagoMantenimientoRepository pagoRepository;
     @Autowired private UsuarioRolRepository usuarioRolRepository;
@@ -87,6 +91,14 @@ public class BoletasService {
         r.setVoucherUrl(pago.getVoucherUrl());
         r.setMes(pago.getCuota().getConfiguracion().getMes());
         r.setAnio(pago.getCuota().getConfiguracion().getAnio());
+
+        if (pago.getLoteId() != null) {
+            List<String> otrosMeses = pagoRepository.findByLoteId(pago.getLoteId()).stream()
+                    .filter(x -> !x.getId().equals(pago.getId()))
+                    .map(x -> NOMBRES_MESES_BOLETA[x.getCuota().getConfiguracion().getMes() - 1] + " " + x.getCuota().getConfiguracion().getAnio())
+                    .collect(Collectors.toList());
+            r.setPagadoJuntoCon(otrosMeses);
+        }
 
         if (b.getEmitidaPor() != null)
             r.setEmitidaPorNombre(b.getEmitidaPor().getNombre() + " " + b.getEmitidaPor().getApellido());

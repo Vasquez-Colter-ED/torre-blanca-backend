@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -434,6 +435,85 @@ public class PagosService {
         return new MensajeResponse(msg, true);
     }
 
+    // ── Registrar pago MÚLTIPLE (Transferencia/Efectivo) ──────────────
+    // A diferencia del pago individual, NO admite parcial: se paga el saldo
+    // exacto de cada cuota seleccionada, con un solo comprobante y un solo
+    // método para todas. Se agrupan con un loteId para que el directivo las
+    // apruebe/rechace juntas más adelante.
+    public MensajeResponse registrarPagoMultiple(RegistrarPagoMultipleRequest request, Integer solicitanteId, boolean esDirectivo) {
+        if (request.getCuotaIds() == null || request.getCuotaIds().isEmpty())
+            throw new RuntimeException("Debes seleccionar al menos una cuota");
+        if (!List.of("TRANSFERENCIA", "EFECTIVO").contains(request.getMetodoPago()))
+            throw new RuntimeException("Método de pago inválido para pago múltiple");
+
+        List<CuotaMantenimiento> cuotas = cuotaRepository.findAllById(request.getCuotaIds());
+        if (cuotas.size() != request.getCuotaIds().size())
+            throw new RuntimeException("Una o más cuotas no fueron encontradas");
+
+        for (CuotaMantenimiento c : cuotas) {
+            if (c.getEstado() == EstadoCuota.PAGADO)
+                throw new RuntimeException("La cuota de " + c.getConfiguracion().getMes() + "/" + c.getConfiguracion().getAnio() + " ya está pagada");
+            boolean tienePendiente = pagoRepository.findByCuotaId(c.getId()).stream()
+                    .anyMatch(p -> p.getEstado() == EstadoPago.PENDIENTE_VERIFICACION);
+            if (tienePendiente)
+                throw new RuntimeException("La cuota de " + c.getConfiguracion().getMes() + "/" + c.getConfiguracion().getAnio() +
+                        " ya tiene un pago pendiente de verificación. Resuélvelo antes de incluirla en un pago múltiple.");
+        }
+
+        ValidacionUtil.validarTextoLibre(request.getNumeroOperacion(), "El número de operación");
+        ValidacionUtil.validarTextoLibre(request.getObservaciones(), "Las observaciones");
+
+        Integer pagadorId;
+        if (esDirectivo) {
+            if (request.getPagadorId() == null)
+                throw new RuntimeException("Debes seleccionar quién realizó el pago");
+            pagadorId = request.getPagadorId();
+        } else {
+            pagadorId = solicitanteId;
+            List<Integer> misDeptos = obtenerDeptosDeUsuario(solicitanteId);
+            for (CuotaMantenimiento c : cuotas) {
+                if (!misDeptos.contains(c.getDepartamento().getId()))
+                    throw new RuntimeException("No puedes registrar el pago de otro departamento");
+            }
+        }
+        Usuario pagador = usuarioRepository.findById(pagadorId)
+                .orElseThrow(() -> new RuntimeException("Pagador no encontrado"));
+
+        String loteId = UUID.randomUUID().toString();
+        BigDecimal total = BigDecimal.ZERO;
+
+        for (CuotaMantenimiento cuota : cuotas) {
+            BigDecimal yaPagado = cuota.getMontoPagado() != null ? cuota.getMontoPagado() : BigDecimal.ZERO;
+            BigDecimal saldoPendiente = cuota.getMontoCalculado().subtract(yaPagado);
+            total = total.add(saldoPendiente);
+
+            PagoMantenimiento pago = new PagoMantenimiento();
+            pago.setCuota(cuota); pago.setPagador(pagador); pago.setMonto(saldoPendiente);
+            pago.setFechaPago(LocalDateTime.now());
+            pago.setMetodoPago(MetodoPago.valueOf(request.getMetodoPago()));
+            pago.setNumeroOperacion(request.getNumeroOperacion());
+            pago.setLoteId(loteId);
+            pago.setVoucherUrl(request.getVoucherUrl());
+            pago.setObservaciones(request.getObservaciones());
+            pago.setEstado(EstadoPago.PENDIENTE_VERIFICACION);
+            pago.setRegistradoPor(esDirectivo ? "DIRECTIVO" : "RESIDENTE");
+            if (esDirectivo) {
+                Usuario registrante = usuarioRepository.findById(solicitanteId).orElse(null);
+                if (registrante != null) {
+                    pago.setRegistradoPorUsuario(registrante);
+                    pago.setRegistradoPorNombre(registrante.getNombre() + " " + registrante.getApellido());
+                    pago.setRegistradoPorCargo(obtenerCargoActual(solicitanteId));
+                }
+            }
+            pagoRepository.save(pago);
+        }
+
+        String nombreP = pagador.getNombre() + " " + pagador.getApellido();
+        return new MensajeResponse("Pago de S/ " + total.setScale(2, java.math.RoundingMode.HALF_UP) +
+                " registrado a nombre de " + nombreP + " (" + cuotas.size() + " cuota" + (cuotas.size() > 1 ? "s" : "") +
+                "). Pendiente de verificación.", true);
+    }
+
     public MensajeResponse verificarPago(Integer pagoId, VerificarPagoRequest request, Integer adminId) {
         verificarDirectivo(adminId);
         PagoMantenimiento pago = pagoRepository.findById(pagoId)
@@ -443,7 +523,36 @@ public class PagosService {
 
         ValidacionUtil.validarTextoLibre(request.getObservaciones(), "Las observaciones");
 
-        if ("APROBAR".equals(request.getAccion())) {
+        String resultado = aplicarVerificacion(pago, request.getAccion(), request.getObservaciones(), admin);
+        return new MensajeResponse(resultado, true);
+    }
+
+    // ── Verificar un LOTE completo (pago múltiple) de una sola vez ───
+    public MensajeResponse verificarLote(String loteId, VerificarPagoRequest request, Integer adminId) {
+        verificarDirectivo(adminId);
+        Usuario admin = usuarioRepository.findById(adminId)
+                .orElseThrow(() -> new RuntimeException("Admin no encontrado"));
+        ValidacionUtil.validarTextoLibre(request.getObservaciones(), "Las observaciones");
+
+        List<PagoMantenimiento> pagosDelLote = pagoRepository.findByLoteId(loteId).stream()
+                .filter(p -> p.getEstado() == EstadoPago.PENDIENTE_VERIFICACION)
+                .collect(Collectors.toList());
+        if (pagosDelLote.isEmpty())
+            throw new RuntimeException("Este lote no tiene pagos pendientes de verificar (puede que ya haya sido procesado)");
+
+        for (PagoMantenimiento pago : pagosDelLote) {
+            aplicarVerificacion(pago, request.getAccion(), request.getObservaciones(), admin);
+        }
+
+        String accionTxt = "APROBAR".equals(request.getAccion()) ? "aprobado" : "rechazado";
+        return new MensajeResponse("Lote de " + pagosDelLote.size() + " cuota" + (pagosDelLote.size() > 1 ? "s" : "") +
+                " " + accionTxt + " correctamente", true);
+    }
+
+    // Aplica APROBAR/RECHAZAR a un pago individual — usado tanto por
+    // verificarPago (uno solo) como por verificarLote (varios de una vez)
+    private String aplicarVerificacion(PagoMantenimiento pago, String accion, String observaciones, Usuario admin) {
+        if ("APROBAR".equals(accion)) {
             pago.setEstado(EstadoPago.VERIFICADO);
 
             CuotaMantenimiento cuota = pago.getCuota();
@@ -459,23 +568,22 @@ public class PagosService {
             cuotaRepository.save(cuota);
 
             pago.setVerificadoPor(admin); pago.setFechaVerificacion(LocalDateTime.now());
-            pago.setVerificadoPorCargo(obtenerCargoActual(adminId));
-            if (request.getObservaciones() != null) pago.setObservaciones(request.getObservaciones());
+            pago.setVerificadoPorCargo(obtenerCargoActual(admin.getId()));
+            if (observaciones != null) pago.setObservaciones(observaciones);
             pagoRepository.save(pago);
             boletasService.generarBoleta(pago, admin);
 
-            String msg = cuota.getEstado() == EstadoCuota.PAGADO
+            return cuota.getEstado() == EstadoCuota.PAGADO
                 ? "Pago aprobado y boleta generada automáticamente. Cuota completada."
                 : "Pago parcial aprobado y boleta generada. Saldo pendiente: S/ " +
                   cuota.getMontoCalculado().subtract(nuevoAcumulado).setScale(2, java.math.RoundingMode.HALF_UP);
-            return new MensajeResponse(msg, true);
-        } else if ("RECHAZAR".equals(request.getAccion())) {
+        } else if ("RECHAZAR".equals(accion)) {
             pago.setEstado(EstadoPago.RECHAZADO);
             pago.setVerificadoPor(admin); pago.setFechaVerificacion(LocalDateTime.now());
-            pago.setVerificadoPorCargo(obtenerCargoActual(adminId));
-            if (request.getObservaciones() != null) pago.setObservaciones(request.getObservaciones());
+            pago.setVerificadoPorCargo(obtenerCargoActual(admin.getId()));
+            if (observaciones != null) pago.setObservaciones(observaciones);
             pagoRepository.save(pago);
-            return new MensajeResponse("Pago rechazado correctamente", true);
+            return "Pago rechazado correctamente";
         } else {
             throw new RuntimeException("Acción inválida. Use APROBAR o RECHAZAR");
         }
@@ -611,6 +719,7 @@ public class PagosService {
     private PagoDetalleResponse toPagoDetalle(PagoMantenimiento p) {
         PagoDetalleResponse r = new PagoDetalleResponse();
         r.setPagoId(p.getId());
+        r.setLoteId(p.getLoteId());
         r.setPagadorNombre(p.getPagador().getNombre() + " " + p.getPagador().getApellido());
         r.setMonto(p.getMonto()); r.setMetodoPago(p.getMetodoPago().name());
         r.setNumeroOperacion(p.getNumeroOperacion()); r.setVoucherUrl(p.getVoucherUrl());
@@ -624,6 +733,8 @@ public class PagosService {
         r.setRegistradoPorCargo(p.getRegistradoPorCargo());
         r.setNumeroDepartamento(p.getCuota().getDepartamento().getNumero());
         r.setPiso(p.getCuota().getDepartamento().getPiso());
+        r.setMes(p.getCuota().getConfiguracion().getMes());
+        r.setAnio(p.getCuota().getConfiguracion().getAnio());
         return r;
     }
 }

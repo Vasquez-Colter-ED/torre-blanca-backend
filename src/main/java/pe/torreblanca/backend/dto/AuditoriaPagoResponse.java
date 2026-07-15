@@ -3,10 +3,13 @@ package pe.torreblanca.backend.dto;
 import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 public class AuditoriaPagoResponse {
     private Integer pagoId;
+    private String loteId;
+    private List<String> loteMesesCubre; // otros meses cubiertos por el mismo comprobante (si aplica)
 
     // Departamento / cuota
     private String numeroDepartamento;

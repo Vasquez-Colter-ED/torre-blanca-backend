@@ -163,6 +163,14 @@ public class ReportesService {
         return pagos.stream().map(p -> {
             AuditoriaPagoResponse a = new AuditoriaPagoResponse();
             a.setPagoId(p.getId());
+            a.setLoteId(p.getLoteId());
+            if (p.getLoteId() != null) {
+                List<String> otrosMeses = pagoRepository.findByLoteId(p.getLoteId()).stream()
+                        .filter(x -> !x.getId().equals(p.getId()))
+                        .map(x -> NOMBRES_MESES[x.getCuota().getConfiguracion().getMes() - 1] + " " + x.getCuota().getConfiguracion().getAnio())
+                        .collect(Collectors.toList());
+                a.setLoteMesesCubre(otrosMeses);
+            }
             a.setNumeroDepartamento(p.getCuota().getDepartamento().getNumero());
             a.setPiso(p.getCuota().getDepartamento().getPiso());
             a.setMes(p.getCuota().getConfiguracion().getMes());

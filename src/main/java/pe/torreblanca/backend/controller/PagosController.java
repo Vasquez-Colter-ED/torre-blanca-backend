@@ -86,6 +86,15 @@ public class PagosController {
         } catch (Exception e) { return ResponseEntity.badRequest().body(e.getMessage()); }
     }
 
+    @PostMapping("/registrar-multiple")
+    public ResponseEntity<?> registrarPagoMultiple(@RequestBody RegistrarPagoMultipleRequest request,
+                                           @RequestHeader("Authorization") String auth) {
+        try {
+            Integer id = getSolicitanteId(auth);
+            return ResponseEntity.ok(pagosService.registrarPagoMultiple(request, id, esDirectivo(id)));
+        } catch (Exception e) { return ResponseEntity.badRequest().body(e.getMessage()); }
+    }
+
     @GetMapping("/pendientes")
     public ResponseEntity<?> pendientes() {
         return ResponseEntity.ok(pagosService.obtenerPendientesVerificacion());
@@ -96,6 +105,14 @@ public class PagosController {
                                            @RequestBody VerificarPagoRequest request,
                                            @RequestHeader("Authorization") String auth) {
         try { return ResponseEntity.ok(pagosService.verificarPago(pagoId, request, getSolicitanteId(auth))); }
+        catch (Exception e) { return ResponseEntity.badRequest().body(e.getMessage()); }
+    }
+
+    @PatchMapping("/lote/{loteId}/verificar")
+    public ResponseEntity<?> verificarLote(@PathVariable String loteId,
+                                           @RequestBody VerificarPagoRequest request,
+                                           @RequestHeader("Authorization") String auth) {
+        try { return ResponseEntity.ok(pagosService.verificarLote(loteId, request, getSolicitanteId(auth))); }
         catch (Exception e) { return ResponseEntity.badRequest().body(e.getMessage()); }
     }
 }

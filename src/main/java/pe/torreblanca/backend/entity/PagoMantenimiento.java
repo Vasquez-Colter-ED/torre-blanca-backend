@@ -37,6 +37,12 @@ public class PagoMantenimiento {
     @Column(name = "numero_operacion")
     private String numeroOperacion;
 
+    // Agrupa varios pagos (distintas cuotas) que vienen de UNA sola acción
+    // del residente (una transferencia, un efectivo, o una tarjeta que cubre
+    // varios meses). Null para pagos normales de una sola cuota.
+    @Column(name = "lote_id")
+    private String loteId;
+
     @Column(name = "voucher_url")
     private String voucherUrl;
 

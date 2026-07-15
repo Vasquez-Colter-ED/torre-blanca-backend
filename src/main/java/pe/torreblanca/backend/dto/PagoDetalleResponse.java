@@ -7,6 +7,7 @@ import java.time.LocalDateTime;
 @Data
 public class PagoDetalleResponse {
     private Integer pagoId;
+    private String loteId;
     private String pagadorNombre;
     private BigDecimal monto;
     private String metodoPago;
@@ -24,4 +25,6 @@ public class PagoDetalleResponse {
     // Info del departamento
     private String numeroDepartamento;
     private Integer piso;
+    private Integer mes;
+    private Integer anio;
 }

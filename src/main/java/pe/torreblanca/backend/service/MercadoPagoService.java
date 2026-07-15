@@ -53,8 +53,14 @@ public class MercadoPagoService {
         Usuario pagador = usuarioRepository.findById(pagadorId)
                 .orElseThrow(() -> new RuntimeException("Pagador no encontrado"));
 
+        // El residente paga la cuota + la comisión de Mercado Pago, para que
+        // la Residencial reciba el 100% de la cuota. Este cálculo se hace
+        // siempre en el servidor (nunca confiando en un monto del cliente).
+        BigDecimal comision = calcularComision(cuota.getMontoCalculado());
+        BigDecimal totalACobrar = cuota.getMontoCalculado().add(comision);
+
         Map<String, Object> mpRequest = Map.of(
-            "transaction_amount", cuota.getMontoCalculado().doubleValue(),
+            "transaction_amount", totalACobrar.doubleValue(),
             "token",              request.getToken(),
             "description",       "Cuota mantenimiento Depto " + cuota.getDepartamento().getNumero(),
             "installments",      request.getCuotas() != null ? request.getCuotas() : 1,
@@ -82,7 +88,7 @@ public class MercadoPagoService {
                 pago.setCuota(cuota);
                 pago.setPagador(pagador);
                 pago.setMonto(cuota.getMontoCalculado());
-                pago.setComision(calcularComision(cuota.getMontoCalculado()));
+                pago.setComision(comision);
                 pago.setFechaPago(LocalDateTime.now());
                 pago.setMetodoPago(MetodoPago.TRANSFERENCIA);
                 pago.setNumeroOperacion(body.get("id").toString());
@@ -154,8 +160,14 @@ public class MercadoPagoService {
                 ? "Cuota mantenimiento Depto " + cuotas.get(0).getDepartamento().getNumero()
                 : "Pago múltiple " + cuotas.size() + " cuotas - Depto " + cuotas.get(0).getDepartamento().getNumero();
 
+        // Es UNA sola transacción en Mercado Pago para todas las cuotas juntas,
+        // así que la comisión (incluida la parte fija de S/ 0.30) se calcula
+        // una sola vez sobre el total, no una vez por cada cuota.
+        BigDecimal comisionTotal = calcularComision(total);
+        BigDecimal totalACobrar = total.add(comisionTotal);
+
         Map<String, Object> mpRequest = Map.of(
-            "transaction_amount", total.doubleValue(),
+            "transaction_amount", totalACobrar.doubleValue(),
             "token",              request.getToken(),
             "description",       descripcion,
             "installments",      request.getCuotas() != null ? request.getCuotas() : 1,
@@ -187,7 +199,10 @@ public class MercadoPagoService {
                     pago.setCuota(cuota);
                     pago.setPagador(pagador);
                     pago.setMonto(cuota.getMontoCalculado());
-                    pago.setComision(calcularComision(cuota.getMontoCalculado()));
+                    // Comisión repartida proporcionalmente al peso de cada cuota
+                    // dentro del total cobrado en esta única transacción
+                    BigDecimal proporcion = cuota.getMontoCalculado().divide(total, 6, RoundingMode.HALF_UP);
+                    pago.setComision(comisionTotal.multiply(proporcion).setScale(2, RoundingMode.HALF_UP));
                     pago.setFechaPago(LocalDateTime.now());
                     pago.setMetodoPago(MetodoPago.TRANSFERENCIA);
                     pago.setNumeroOperacion(operacionId);
@@ -215,7 +230,7 @@ public class MercadoPagoService {
 
                 return new MensajeResponse(
                     "Pago aprobado por S/ " + total.setScale(2, RoundingMode.HALF_UP) +
-                    ". Se generaron " + cuotas.size() + " recibo(s) a nombre de " +
+                    " (más S/ " + comisionTotal + " de comisión). Se generaron " + cuotas.size() + " recibo(s) a nombre de " +
                     pagador.getNombre() + " " + pagador.getApellido(), true);
 
             } else if ("in_process".equals(status) || "pending".equals(status)) {
