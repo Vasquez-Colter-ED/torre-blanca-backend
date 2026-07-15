@@ -266,6 +266,8 @@ public class UsuarioService {
         verificarDirectivo(adminId, "asignar roles");
         Usuario usuario = usuarioRepository.findById(usuarioId)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+        if (usuario.getEstado() != EstadoUsuario.ACTIVO)
+            throw new RuntimeException("No puedes asignar un cargo a un usuario inactivo. Actívalo primero.");
         Rol rol = rolRepository.findById(rolId)
                 .orElseThrow(() -> new RuntimeException("Rol no encontrado"));
 
