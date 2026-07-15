@@ -65,23 +65,28 @@ public class UsuarioService {
         if (request.getTelefono() != null && !request.getTelefono().trim().isEmpty())
             ValidacionUtil.validarTelefono(request.getTelefono());
 
-        // Departamento obligatorio
-        if (request.getDepartamentoId() == null)
-            throw new RuntimeException("Debe asignar un departamento al usuario");
-        String tipo = request.getTipoResidencia() != null ? request.getTipoResidencia() : "PROPIETARIO";
-        if (!tipo.equals("PROPIETARIO") && !tipo.equals("INQUILINO"))
-            throw new RuntimeException("El tipo de residencia debe ser PROPIETARIO o INQUILINO");
+        // Departamento es opcional — permite crear personal/administradores
+        // sin vivienda asignada (ej. portero, personal contratado, etc.)
+        Departamento depto = null;
+        String tipo = null;
+        if (request.getDepartamentoId() != null) {
+            tipo = request.getTipoResidencia() != null ? request.getTipoResidencia() : "PROPIETARIO";
+            if (!tipo.equals("PROPIETARIO") && !tipo.equals("INQUILINO"))
+                throw new RuntimeException("El tipo de residencia debe ser PROPIETARIO o INQUILINO");
 
-        Departamento depto = departamentoRepository.findById(request.getDepartamentoId())
-                .orElseThrow(() -> new RuntimeException("Departamento no encontrado"));
+            depto = departamentoRepository.findById(request.getDepartamentoId())
+                    .orElseThrow(() -> new RuntimeException("Departamento no encontrado"));
+            if ("ESTACIONAMIENTO".equals(depto.getTipo()))
+                throw new RuntimeException("No puedes asignar un residente directamente a una cochera. Selecciona un departamento residencial — la cochera se vincula después desde el módulo de Departamentos.");
 
-        // Validar disponibilidad del departamento
-        if (tipo.equals("PROPIETARIO") && propietarioDeptoRepository.findActivoByDepartamentoId(depto.getId()).isPresent())
-            throw new RuntimeException("El departamento " + depto.getNumero() + " ya tiene un propietario activo. Primero debe desvincularlo.");
-        if (tipo.equals("INQUILINO")) {
-            long actuales = inquilinoDeptoRepository.findActivosByDepartamentoId(depto.getId()).size();
-            if (actuales >= 5)
-                throw new RuntimeException("El departamento " + depto.getNumero() + " ya tiene 5 inquilinos, que es el máximo permitido");
+            // Validar disponibilidad del departamento
+            if (tipo.equals("PROPIETARIO") && propietarioDeptoRepository.findActivoByDepartamentoId(depto.getId()).isPresent())
+                throw new RuntimeException("El departamento " + depto.getNumero() + " ya tiene un propietario activo. Primero debe desvincularlo.");
+            if (tipo.equals("INQUILINO")) {
+                long actuales = inquilinoDeptoRepository.findActivosByDepartamentoId(depto.getId()).size();
+                if (actuales >= 5)
+                    throw new RuntimeException("El departamento " + depto.getNumero() + " ya tiene 5 inquilinos, que es el máximo permitido");
+            }
         }
 
         // Cargo directivo opcional — solo roles con es_directivo = true
@@ -103,27 +108,29 @@ public class UsuarioService {
         nuevo.setEstado(EstadoUsuario.ACTIVO);
         Usuario guardado = usuarioRepository.save(nuevo);
 
-        // Asignar al departamento según tipo
-        if (tipo.equals("PROPIETARIO")) {
-            PropietarioDepartamento pd = new PropietarioDepartamento();
-            pd.setUsuario(guardado); pd.setDepartamento(depto);
-            pd.setFechaInicio(LocalDate.now()); pd.setEstado(true);
-            propietarioDeptoRepository.save(pd);
-        } else {
-            // Para inquilino buscamos al propietario activo del depto
-            propietarioDeptoRepository.findActivoByDepartamentoId(depto.getId()).ifPresent(propDep -> {
-                InquilinoDepartamento inq = new InquilinoDepartamento();
-                inq.setUsuario(guardado); inq.setDepartamento(depto);
-                inq.setPropietario(propDep.getUsuario());
-                inq.setFechaInicio(LocalDate.now()); inq.setEstado(true);
-                inquilinoDeptoRepository.save(inq);
-            });
-            if (propietarioDeptoRepository.findActivoByDepartamentoId(depto.getId()).isEmpty()) {
-                // Sin propietario aún, lo guardamos igual (propietario_id null)
-                InquilinoDepartamento inq = new InquilinoDepartamento();
-                inq.setUsuario(guardado); inq.setDepartamento(depto);
-                inq.setFechaInicio(LocalDate.now()); inq.setEstado(true);
-                inquilinoDeptoRepository.save(inq);
+        // Asignar al departamento según tipo (solo si se especificó uno)
+        if (depto != null) {
+            if (tipo.equals("PROPIETARIO")) {
+                PropietarioDepartamento pd = new PropietarioDepartamento();
+                pd.setUsuario(guardado); pd.setDepartamento(depto);
+                pd.setFechaInicio(LocalDate.now()); pd.setEstado(true);
+                propietarioDeptoRepository.save(pd);
+            } else {
+                // Para inquilino buscamos al propietario activo del depto
+                propietarioDeptoRepository.findActivoByDepartamentoId(depto.getId()).ifPresent(propDep -> {
+                    InquilinoDepartamento inq = new InquilinoDepartamento();
+                    inq.setUsuario(guardado); inq.setDepartamento(depto);
+                    inq.setPropietario(propDep.getUsuario());
+                    inq.setFechaInicio(LocalDate.now()); inq.setEstado(true);
+                    inquilinoDeptoRepository.save(inq);
+                });
+                if (propietarioDeptoRepository.findActivoByDepartamentoId(depto.getId()).isEmpty()) {
+                    // Sin propietario aún, lo guardamos igual (propietario_id null)
+                    InquilinoDepartamento inq = new InquilinoDepartamento();
+                    inq.setUsuario(guardado); inq.setDepartamento(depto);
+                    inq.setFechaInicio(LocalDate.now()); inq.setEstado(true);
+                    inquilinoDeptoRepository.save(inq);
+                }
             }
         }
 
@@ -135,8 +142,10 @@ public class UsuarioService {
         datosNuevos.put("nombre", guardado.getNombre() + " " + guardado.getApellido());
         datosNuevos.put("email", guardado.getEmail());
         datosNuevos.put("dni", guardado.getDni());
-        datosNuevos.put("departamento", depto.getNumero());
-        datosNuevos.put("tipoResidencia", tipo);
+        if (depto != null) {
+            datosNuevos.put("departamento", depto.getNumero());
+            datosNuevos.put("tipoResidencia", tipo);
+        }
         auditoriaService.registrar(adminId, "Usuario creado", "usuarios", guardado.getId(), null, datosNuevos);
 
         return toResponse(guardado);
@@ -202,6 +211,8 @@ public class UsuarioService {
         // Solo directivos pueden cambiar departamento y tipo
         if (request.getDepartamentoId() != null && esAdmin) {
             Departamento depto = departamentoRepository.findById(request.getDepartamentoId()).orElse(null);
+            if (depto != null && "ESTACIONAMIENTO".equals(depto.getTipo()))
+                throw new RuntimeException("No puedes asignar un residente directamente a una cochera. Selecciona un departamento residencial.");
             if (depto != null) {
                 String tipo = request.getTipoResidencia() != null ? request.getTipoResidencia() : "PROPIETARIO";
                 if ("INQUILINO".equals(tipo)) {

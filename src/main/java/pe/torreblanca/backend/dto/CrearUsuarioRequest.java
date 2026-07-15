@@ -12,7 +12,8 @@ public class CrearUsuarioRequest {
     private String password;
     // Cargo directivo opcional (PRESIDENTE/SECRETARIO/TESORERO)
     private Integer cargoDirectivoId;
-    // Asignación al departamento (obligatorio)
+    // Asignación al departamento (opcional — se puede crear un usuario
+    // sin depto, por ejemplo para personal administrativo)
     private Integer departamentoId;
     private String tipoResidencia; // "PROPIETARIO" o "INQUILINO"
     // Para mantener compatibilidad con código anterior
