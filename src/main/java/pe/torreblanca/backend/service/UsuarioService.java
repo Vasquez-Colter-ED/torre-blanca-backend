@@ -246,9 +246,31 @@ public class UsuarioService {
         Usuario usuario = usuarioRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
         if (esDirectivo(id)) throw new RuntimeException("No puedes desactivar a un directivo");
+
+        // Al desactivar, se desvincula automáticamente de todos los departamentos
+        // donde figure como propietario o inquilino activo. El historial de pagos,
+        // boletas y recibos NO se toca — sigue intacto para efectos de Reportes.
+        List<String> deptosPropietario = new ArrayList<>();
+        propietarioDeptoRepository.findActivosByUsuarioId(id).forEach(pd -> {
+            deptosPropietario.add(pd.getDepartamento().getNumero());
+            pd.setEstado(false); pd.setFechaFin(LocalDate.now());
+            propietarioDeptoRepository.save(pd);
+        });
+        List<String> deptosInquilino = new ArrayList<>();
+        inquilinoDeptoRepository.findActivosByUsuarioId(id).forEach(inq -> {
+            deptosInquilino.add(inq.getDepartamento().getNumero());
+            inq.setEstado(false); inq.setFechaFin(LocalDate.now());
+            inquilinoDeptoRepository.save(inq);
+        });
+
         usuario.setEstado(EstadoUsuario.INACTIVO);
         usuarioRepository.save(usuario);
-        auditoriaService.registrar(solicitanteId, "Usuario desactivado", "usuarios", id);
+
+        Map<String, Object> datosDesvinculacion = new LinkedHashMap<>();
+        if (!deptosPropietario.isEmpty()) datosDesvinculacion.put("desvinculadoComoPropietarioDe", deptosPropietario);
+        if (!deptosInquilino.isEmpty())  datosDesvinculacion.put("desvinculadoComoInquilinoDe", deptosInquilino);
+        auditoriaService.registrar(solicitanteId, "Usuario desactivado", "usuarios", id, null,
+                datosDesvinculacion.isEmpty() ? null : datosDesvinculacion);
         return new MensajeResponse("Usuario desactivado correctamente", true);
     }
 
