@@ -16,8 +16,8 @@ public class ValidacionUtil {
     // Exactamente 8 dígitos — DNI peruano
     private static final Pattern PATRON_DNI = Pattern.compile("^\\d{8}$");
 
-    // Entre 6 y 9 dígitos — teléfonos fijos y celulares en Perú
-    private static final Pattern PATRON_TELEFONO = Pattern.compile("^\\d{6,9}$");
+    // Código de país (+51, etc.) seguido de 6 a 12 dígitos — teléfonos con prefijo internacional
+    private static final Pattern PATRON_TELEFONO = Pattern.compile("^\\+\\d{1,4}\\d{6,12}$");
 
     // Formato de email estándar
     private static final Pattern PATRON_EMAIL = Pattern.compile("^[\\w.-]+@[\\w.-]+\\.[A-Za-z]{2,}$");
@@ -41,7 +41,7 @@ public class ValidacionUtil {
     public static void validarTelefono(String valor) {
         if (valor == null || valor.trim().isEmpty()) return; // campo opcional
         if (!PATRON_TELEFONO.matcher(valor.trim()).matches())
-            throw new RuntimeException("El teléfono debe tener entre 6 y 9 dígitos numéricos");
+            throw new RuntimeException("El teléfono debe incluir el código de país (ej. +51) seguido del número");
     }
 
     public static void validarEmail(String valor) {
