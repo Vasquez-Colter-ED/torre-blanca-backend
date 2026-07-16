@@ -541,6 +541,10 @@ public class PagosService {
         Usuario admin = usuarioRepository.findById(adminId)
                 .orElseThrow(() -> new RuntimeException("Admin no encontrado"));
 
+        verificarNoAutoVerificacion(pago, adminId);
+
+        if ("RECHAZAR".equals(request.getAccion()) && (request.getObservaciones() == null || request.getObservaciones().trim().isEmpty()))
+            throw new RuntimeException("Debes indicar el motivo del rechazo");
         ValidacionUtil.validarTextoLibre(request.getObservaciones(), "Las observaciones");
 
         String resultado = aplicarVerificacion(pago, request.getAccion(), request.getObservaciones(), admin);
@@ -552,6 +556,9 @@ public class PagosService {
         verificarDirectivo(adminId);
         Usuario admin = usuarioRepository.findById(adminId)
                 .orElseThrow(() -> new RuntimeException("Admin no encontrado"));
+
+        if ("RECHAZAR".equals(request.getAccion()) && (request.getObservaciones() == null || request.getObservaciones().trim().isEmpty()))
+            throw new RuntimeException("Debes indicar el motivo del rechazo");
         ValidacionUtil.validarTextoLibre(request.getObservaciones(), "Las observaciones");
 
         List<PagoMantenimiento> pagosDelLote = pagoRepository.findByLoteId(loteId).stream()
@@ -561,12 +568,28 @@ public class PagosService {
             throw new RuntimeException("Este lote no tiene pagos pendientes de verificar (puede que ya haya sido procesado)");
 
         for (PagoMantenimiento pago : pagosDelLote) {
+            verificarNoAutoVerificacion(pago, adminId);
+        }
+
+        for (PagoMantenimiento pago : pagosDelLote) {
             aplicarVerificacion(pago, request.getAccion(), request.getObservaciones(), admin);
         }
 
         String accionTxt = "APROBAR".equals(request.getAccion()) ? "aprobado" : "rechazado";
         return new MensajeResponse("Lote de " + pagosDelLote.size() + " cuota" + (pagosDelLote.size() > 1 ? "s" : "") +
                 " " + accionTxt + " correctamente", true);
+    }
+
+    // Un directivo NO puede aprobar/rechazar un pago que él mismo hizo (como
+    // residente) ni uno que él mismo registró manualmente a nombre de otro
+    // — principio de doble verificación: quién registra el movimiento no
+    // puede ser también quien lo aprueba.
+    private void verificarNoAutoVerificacion(PagoMantenimiento pago, Integer adminId) {
+        boolean esElMismoPagador = pago.getPagador() != null && pago.getPagador().getId().equals(adminId);
+        boolean esQuienLoRegistro = pago.getRegistradoPorUsuario() != null && pago.getRegistradoPorUsuario().getId().equals(adminId);
+        if (esElMismoPagador || esQuienLoRegistro) {
+            throw new RuntimeException("No puedes aprobar ni rechazar un pago que tú mismo pagaste o registraste. Debe hacerlo otro directivo.");
+        }
     }
 
     // Aplica APROBAR/RECHAZAR a un pago individual — usado tanto por
