@@ -688,13 +688,23 @@ public class PagosService {
         return map;
     }
 
-    private List<String> obtenerResidentesDeDepto(Integer deptoId) {
+    private List<String> obtenerResidentesDeDepto(Integer deptoId, Integer mes, Integer anio) {
         List<String> nombres = new ArrayList<>();
         propietarioDeptoRepository.findActivoByDepartamentoId(deptoId)
+                .filter(pd -> yaEstabaVinculadoEnPeriodo(pd.getFechaInicio(), mes, anio))
                 .ifPresent(pd -> nombres.add(pd.getUsuario().getNombre() + " " + pd.getUsuario().getApellido() + " (Propietario)"));
-        inquilinoDeptoRepository.findActivosByDepartamentoId(deptoId)
+        inquilinoDeptoRepository.findActivosByDepartamentoId(deptoId).stream()
+                .filter(i -> yaEstabaVinculadoEnPeriodo(i.getFechaInicio(), mes, anio))
                 .forEach(i -> nombres.add(i.getUsuario().getNombre() + " " + i.getUsuario().getApellido() + " (Inquilino)"));
         return nombres;
+    }
+
+    // Para mostrarle al directivo quién corresponde realmente a una cuota de
+    // un mes específico — si el residente actual llegó después de ese
+    // período, no debe aparecer como si esa deuda fuera suya
+    private boolean yaEstabaVinculadoEnPeriodo(LocalDate fechaInicio, Integer mes, Integer anio) {
+        if (fechaInicio == null) return true; // vínculos viejos sin fecha registrada
+        return fechaInicio.getYear() < anio || (fechaInicio.getYear() == anio && fechaInicio.getMonthValue() <= mes);
     }
 
     private boolean esDirectivo(Integer usuarioId) {
@@ -791,7 +801,7 @@ public class PagosService {
         r.setMes(c.getConfiguracion().getMes());
         r.setAnio(c.getConfiguracion().getAnio());
         r.setEstadoCuota(c.getEstado().name());
-        r.setResidentesNombres(obtenerResidentesDeDepto(c.getDepartamento().getId()));
+        r.setResidentesNombres(obtenerResidentesDeDepto(c.getDepartamento().getId(), c.getConfiguracion().getMes(), c.getConfiguracion().getAnio()));
         r.setPagos(pagoRepository.findByCuotaId(c.getId()).stream()
                 .map(this::toPagoDetalle).collect(Collectors.toList()));
         return r;
