@@ -646,7 +646,12 @@ public class PagosService {
 
     public List<ConfiguracionResponse> listarConfiguraciones() {
         return configuracionRepository.findAll().stream()
-                .sorted((a, b) -> a.getAnio() != b.getAnio() ? a.getAnio() - b.getAnio() : a.getMes() - b.getMes())
+                .sorted((a, b) -> {
+                    // OJO: comparar Integers con != compara el OBJETO, no el valor —
+                    // hay que restar (o usar .equals) para comparar el número real
+                    int cmpAnio = a.getAnio() - b.getAnio();
+                    return cmpAnio != 0 ? cmpAnio : a.getMes() - b.getMes();
+                })
                 .map(c -> {
                     ConfiguracionResponse r = new ConfiguracionResponse();
                     r.setId(c.getId()); r.setMes(c.getMes()); r.setAnio(c.getAnio());
