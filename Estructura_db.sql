@@ -35,7 +35,7 @@ CREATE TABLE `auditoria` (
   PRIMARY KEY (`id`) /*T![clustered_index] CLUSTERED */,
   KEY `fk_1` (`usuario_id`),
   CONSTRAINT `fk_1` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=450001;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -58,7 +58,7 @@ CREATE TABLE `boletas` (
   KEY `fk_2` (`emitida_por`),
   CONSTRAINT `fk_1` FOREIGN KEY (`pago_id`) REFERENCES `pagos_mantenimiento` (`id`),
   CONSTRAINT `fk_2` FOREIGN KEY (`emitida_por`) REFERENCES `usuarios` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=360001;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=390001;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -97,7 +97,7 @@ CREATE TABLE `cocheras_departamentos` (
   KEY `fk_2` (`departamento_id`),
   CONSTRAINT `fk_1` FOREIGN KEY (`cochera_id`) REFERENCES `departamentos` (`id`),
   CONSTRAINT `fk_2` FOREIGN KEY (`departamento_id`) REFERENCES `departamentos` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=60001;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=90001;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -175,25 +175,53 @@ CREATE TABLE `departamentos` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
--- Table structure for table `fondo_contingencia`
+-- Table structure for table `fondo_movimientos`
 --
 
-DROP TABLE IF EXISTS `fondo_contingencia`;
+DROP TABLE IF EXISTS `fondo_movimientos`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `fondo_contingencia` (
+CREATE TABLE `fondo_movimientos` (
   `id` int NOT NULL AUTO_INCREMENT,
-  `mes` int NOT NULL,
-  `anio` int NOT NULL,
-  `monto_ingresado` decimal(12,2) DEFAULT '0',
-  `monto_gastado` decimal(12,2) DEFAULT '0',
-  `saldo` decimal(12,2) GENERATED ALWAYS AS (`monto_ingresado` - `monto_gastado`) STORED,
-  `descripcion` text DEFAULT NULL,
+  `proyecto_id` int DEFAULT NULL,
+  `tipo` varchar(10) NOT NULL,
+  `monto` decimal(10,2) NOT NULL,
+  `concepto` varchar(255) NOT NULL,
+  `fecha` date NOT NULL,
+  `comprobante_url` varchar(500) DEFAULT NULL,
+  `gasto_id` int DEFAULT NULL,
   `registrado_por` int DEFAULT NULL,
   `created_at` timestamp DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`) /*T![clustered_index] CLUSTERED */,
-  KEY `fk_1` (`registrado_por`),
-  CONSTRAINT `fk_1` FOREIGN KEY (`registrado_por`) REFERENCES `usuarios` (`id`)
+  KEY `fk_fm_1` (`proyecto_id`),
+  KEY `fk_fm_2` (`gasto_id`),
+  KEY `fk_fm_3` (`registrado_por`),
+  CONSTRAINT `fk_fm_1` FOREIGN KEY (`proyecto_id`) REFERENCES `fondo_proyectos` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_fm_2` FOREIGN KEY (`gasto_id`) REFERENCES `gastos` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_fm_3` FOREIGN KEY (`registrado_por`) REFERENCES `usuarios` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `fondo_proyectos`
+--
+
+DROP TABLE IF EXISTS `fondo_proyectos`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `fondo_proyectos` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `nombre` varchar(150) NOT NULL,
+  `descripcion` text DEFAULT NULL,
+  `meta_monto` decimal(12,2) DEFAULT NULL,
+  `estado` varchar(20) DEFAULT 'ACTIVO',
+  `fecha_inicio` date NOT NULL,
+  `fecha_cierre` date DEFAULT NULL,
+  `creado_por` int DEFAULT NULL,
+  `created_at` timestamp DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`) /*T![clustered_index] CLUSTERED */,
+  KEY `fk_fp_1` (`creado_por`),
+  CONSTRAINT `fk_fp_1` FOREIGN KEY (`creado_por`) REFERENCES `usuarios` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -234,7 +262,7 @@ CREATE TABLE `inquilinos_departamentos` (
   `id` int NOT NULL AUTO_INCREMENT,
   `usuario_id` int NOT NULL,
   `departamento_id` int NOT NULL,
-  `propietario_id` int NOT NULL,
+  `propietario_id` int DEFAULT NULL,
   `fecha_inicio` date NOT NULL,
   `fecha_fin` date DEFAULT NULL,
   `paga_mantenimiento` tinyint(1) DEFAULT '1',
@@ -246,7 +274,7 @@ CREATE TABLE `inquilinos_departamentos` (
   CONSTRAINT `fk_1` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`),
   CONSTRAINT `fk_2` FOREIGN KEY (`departamento_id`) REFERENCES `departamentos` (`id`),
   CONSTRAINT `fk_3` FOREIGN KEY (`propietario_id`) REFERENCES `usuarios` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=150001;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=300001;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -283,6 +311,7 @@ CREATE TABLE `pagos_mantenimiento` (
   `fecha_pago` timestamp NOT NULL,
   `metodo_pago` enum('TRANSFERENCIA','DEPOSITO','YAPE','PLIN','EFECTIVO','OTRO') NOT NULL,
   `numero_operacion` varchar(100) DEFAULT NULL,
+  `lote_id` varchar(36) DEFAULT NULL,
   `voucher_url` varchar(500) DEFAULT NULL,
   `estado` enum('PENDIENTE_VERIFICACION','VERIFICADO','RECHAZADO') DEFAULT 'PENDIENTE_VERIFICACION',
   `registrado_por` enum('RESIDENTE','DIRECTIVO','SISTEMA') DEFAULT 'RESIDENTE',
@@ -300,11 +329,12 @@ CREATE TABLE `pagos_mantenimiento` (
   KEY `fk_2` (`pagador_id`),
   KEY `fk_3` (`verificado_por`),
   KEY `fk_registrado_por` (`registrado_por_id`),
+  KEY `idx_lote_id` (`lote_id`),
   CONSTRAINT `fk_1` FOREIGN KEY (`cuota_id`) REFERENCES `cuotas_mantenimiento` (`id`),
   CONSTRAINT `fk_2` FOREIGN KEY (`pagador_id`) REFERENCES `usuarios` (`id`),
   CONSTRAINT `fk_3` FOREIGN KEY (`verificado_por`) REFERENCES `usuarios` (`id`),
   CONSTRAINT `fk_registrado_por` FOREIGN KEY (`registrado_por_id`) REFERENCES `usuarios` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=480001;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=630001;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -342,7 +372,7 @@ CREATE TABLE `propietarios_departamentos` (
   KEY `fk_2` (`departamento_id`),
   CONSTRAINT `fk_1` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`),
   CONSTRAINT `fk_2` FOREIGN KEY (`departamento_id`) REFERENCES `departamentos` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=150001;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=240001;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -412,7 +442,7 @@ CREATE TABLE `usuarios` (
   PRIMARY KEY (`id`) /*T![clustered_index] CLUSTERED */,
   UNIQUE KEY `dni` (`dni`),
   UNIQUE KEY `email` (`email`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=180001;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=240001;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -464,7 +494,7 @@ CREATE TABLE `usuarios_roles` (
   CONSTRAINT `fk_1` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`),
   CONSTRAINT `fk_2` FOREIGN KEY (`rol_id`) REFERENCES `roles` (`id`),
   CONSTRAINT `fk_3` FOREIGN KEY (`asignado_por`) REFERENCES `usuarios` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=270001;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=450001;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
@@ -476,4 +506,4 @@ CREATE TABLE `usuarios_roles` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-07-09 22:29:32
+-- Dump completed on 2026-07-16  5:03:09

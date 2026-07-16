@@ -21,6 +21,8 @@ public class ReportesMesResponse {
     private BigDecimal recaudadoDigital;
     // Deudores
     private List<DeudorInfo> deudores;
+    // Departamentos que ya pagaron ese mes, con detalle de quién pagó y cómo
+    private List<PagadorInfo> pagadores;
     // Gastos por categoría
     private Map<String, BigDecimal> gastosPorCategoria;
 }

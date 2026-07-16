@@ -36,6 +36,7 @@ public class ReportesService {
         BigDecimal esperado   = BigDecimal.ZERO;
         int pagados = 0, total = 0;
         List<DeudorInfo> deudores = new ArrayList<>();
+        List<PagadorInfo> pagadores = new ArrayList<>();
 
         if (configOpt.isPresent()) {
             List<CuotaMantenimiento> cuotas = cuotaRepository.findByConfiguracionId(configOpt.get().getId());
@@ -45,6 +46,7 @@ public class ReportesService {
                 if (c.getEstado() == EstadoCuota.PAGADO) {
                     recaudado = recaudado.add(c.getMontoCalculado());
                     pagados++;
+                    pagadores.add(construirPagadorInfo(c));
                 } else {
                     DeudorInfo d = new DeudorInfo();
                     d.setNumeroDepartamento(c.getDepartamento().getNumero());
@@ -84,9 +86,43 @@ public class ReportesService {
         r.setDeptosPagados(pagados);
         r.setDeptosTotal(total);
         r.setDeudores(deudores);
+        r.setPagadores(pagadores);
         r.setGastosPorCategoria(porCategoria);
 
         return r;
+    }
+
+    // Arma el detalle de un departamento que ya completó su cuota: cuánto
+    // pagó, con qué método(s) y quién(es) realmente hicieron el pago — no
+    // necesariamente el mismo residente (puede haberlo pagado un directivo
+    // a nombre de otro, o un familiar). Solo cuenta pagos ya VERIFICADOS.
+    private PagadorInfo construirPagadorInfo(CuotaMantenimiento c) {
+        PagadorInfo p = new PagadorInfo();
+        p.setNumeroDepartamento(c.getDepartamento().getNumero());
+        p.setPiso(c.getDepartamento().getPiso());
+        p.setMontoPagado(c.getMontoCalculado());
+        p.setResidentesNombres(obtenerResidentesDeDepto(c.getDepartamento().getId()));
+
+        List<PagoMantenimiento> pagosVerificados = pagoRepository.findByCuotaId(c.getId()).stream()
+                .filter(pg -> pg.getEstado() == EstadoPago.VERIFICADO)
+                .sorted(Comparator.comparing(PagoMantenimiento::getFechaPago))
+                .collect(Collectors.toList());
+
+        if (!pagosVerificados.isEmpty()) {
+            PagoMantenimiento ultimo = pagosVerificados.get(pagosVerificados.size() - 1);
+            p.setFechaPago(ultimo.getFechaPago());
+
+            Set<String> metodos = pagosVerificados.stream()
+                    .map(pg -> pg.getMetodoPago().name())
+                    .collect(Collectors.toCollection(LinkedHashSet::new));
+            p.setMetodoPago(metodos.size() > 1 ? "MULTIPLE" : metodos.iterator().next());
+
+            Set<String> nombresPagadores = pagosVerificados.stream()
+                    .map(pg -> pg.getPagador().getNombre() + " " + pg.getPagador().getApellido())
+                    .collect(Collectors.toCollection(LinkedHashSet::new));
+            p.setPagadoPorNombre(String.join(" y ", nombresPagadores));
+        }
+        return p;
     }
 
     // ── Reporte anual ─────────────────────────────────────────────────
