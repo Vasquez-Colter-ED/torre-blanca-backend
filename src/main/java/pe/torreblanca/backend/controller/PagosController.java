@@ -71,9 +71,13 @@ public class PagosController {
 
     // Lista de residentes de un departamento específico — para el selector
     // de "quién realizó el pago" cuando el directivo registra manualmente.
+    // mes/anio son opcionales: si se envían, filtra a quién vivía ahí en
+    // ese período exacto (incluye residentes históricos que ya se mudaron).
     @GetMapping("/departamento/{id}/residentes")
-    public ResponseEntity<?> residentesDeDepto(@PathVariable Integer id) {
-        try { return ResponseEntity.ok(pagosService.listarResidentesDeDepto(id)); }
+    public ResponseEntity<?> residentesDeDepto(@PathVariable Integer id,
+                                                @RequestParam(required = false) Integer mes,
+                                                @RequestParam(required = false) Integer anio) {
+        try { return ResponseEntity.ok(pagosService.listarResidentesDeDepto(id, mes, anio)); }
         catch (Exception e) { return ResponseEntity.badRequest().body(e.getMessage()); }
     }
 

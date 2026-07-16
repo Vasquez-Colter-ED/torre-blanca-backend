@@ -12,4 +12,8 @@ public interface InquilinoDepartamentoRepository extends JpaRepository<Inquilino
 
     @Query("SELECT i FROM InquilinoDepartamento i WHERE i.departamento.id = :deptoId AND i.estado = true")
     List<InquilinoDepartamento> findActivosByDepartamentoId(Integer deptoId);
+
+    // Todos los inquilinos que alguna vez tuvo el depto (activos e históricos)
+    @Query("SELECT i FROM InquilinoDepartamento i WHERE i.departamento.id = :deptoId ORDER BY i.fechaInicio DESC")
+    List<InquilinoDepartamento> findTodosByDepartamentoId(Integer deptoId);
 }

@@ -115,26 +115,51 @@ public class PagosService {
     // Lista de residentes de UN departamento específico — usado para el
     // selector de "quién realizó el pago" cuando un directivo registra
     // un pago manualmente (efectivo, etc.)
-    public List<ResidenteOption> listarResidentesDeDepto(Integer departamentoId) {
+    // Si se pasa mes/anio, filtra a quién realmente vivía ahí en ESE
+    // período (incluyendo residentes históricos que ya se mudaron) — así
+    // no se le puede atribuir un pago viejo a alguien que llegó después.
+    // Sin mes/anio, devuelve solo a los residentes activos actuales.
+    public List<ResidenteOption> listarResidentesDeDepto(Integer departamentoId, Integer mes, Integer anio) {
         List<ResidenteOption> lista = new ArrayList<>();
+        boolean filtrarPorPeriodo = mes != null && anio != null;
 
-        propietarioDeptoRepository.findActivoByDepartamentoId(departamentoId).ifPresent(pd -> {
-            ResidenteOption r = new ResidenteOption();
-            r.setId(pd.getUsuario().getId());
-            r.setNombre(pd.getUsuario().getNombre() + " " + pd.getUsuario().getApellido());
-            r.setTipo("PROPIETARIO");
-            lista.add(r);
-        });
+        List<PropietarioDepartamento> propietarios = filtrarPorPeriodo
+                ? propietarioDeptoRepository.findTodosByDepartamentoId(departamentoId)
+                : propietarioDeptoRepository.findActivoByDepartamentoId(departamentoId).map(List::of).orElse(List.of());
+        propietarios.stream()
+                .filter(pd -> !filtrarPorPeriodo || vinculadoEnPeriodo(pd.getFechaInicio(), pd.getFechaFin(), mes, anio))
+                .forEach(pd -> {
+                    ResidenteOption r = new ResidenteOption();
+                    r.setId(pd.getUsuario().getId());
+                    r.setNombre(pd.getUsuario().getNombre() + " " + pd.getUsuario().getApellido());
+                    r.setTipo("PROPIETARIO");
+                    lista.add(r);
+                });
 
-        inquilinoDeptoRepository.findActivosByDepartamentoId(departamentoId).forEach(i -> {
-            ResidenteOption r = new ResidenteOption();
-            r.setId(i.getUsuario().getId());
-            r.setNombre(i.getUsuario().getNombre() + " " + i.getUsuario().getApellido());
-            r.setTipo("INQUILINO");
-            lista.add(r);
-        });
+        List<InquilinoDepartamento> inquilinos = filtrarPorPeriodo
+                ? inquilinoDeptoRepository.findTodosByDepartamentoId(departamentoId)
+                : inquilinoDeptoRepository.findActivosByDepartamentoId(departamentoId);
+        inquilinos.stream()
+                .filter(i -> !filtrarPorPeriodo || vinculadoEnPeriodo(i.getFechaInicio(), i.getFechaFin(), mes, anio))
+                .forEach(i -> {
+                    ResidenteOption r = new ResidenteOption();
+                    r.setId(i.getUsuario().getId());
+                    r.setNombre(i.getUsuario().getNombre() + " " + i.getUsuario().getApellido());
+                    r.setTipo("INQUILINO");
+                    lista.add(r);
+                });
 
         return lista;
+    }
+
+    // ¿Este vínculo (propietario/inquilino) estaba vigente durante ese mes?
+    // Considera tanto cuándo empezó como cuándo terminó (null = sigue activo)
+    private boolean vinculadoEnPeriodo(LocalDate fechaInicio, LocalDate fechaFin, Integer mes, Integer anio) {
+        boolean yaHabiaEmpezado = fechaInicio == null
+                || fechaInicio.getYear() < anio || (fechaInicio.getYear() == anio && fechaInicio.getMonthValue() <= mes);
+        boolean aunNoTerminaba = fechaFin == null
+                || fechaFin.getYear() > anio || (fechaFin.getYear() == anio && fechaFin.getMonthValue() >= mes);
+        return yaHabiaEmpezado && aunNoTerminaba;
     }
 
     // ── Configuración mensual ─────────────────────────────────────────
