@@ -225,6 +225,18 @@ public class PagosService {
         ConfiguracionMantenimiento config = configuracionRepository.findById(configId)
                 .orElseThrow(() -> new RuntimeException("Configuración no encontrada"));
 
+        // No se puede editar si algún departamento ya registró un pago (total
+        // o parcial) con los montos actuales — cambiar la fórmula después
+        // alteraría retroactivamente lo que esa persona ya pagó
+        List<CuotaMantenimiento> cuotas = cuotaRepository.findByConfiguracionId(configId);
+        long conPago = cuotas.stream()
+                .filter(c -> c.getMontoPagado() != null && c.getMontoPagado().compareTo(BigDecimal.ZERO) > 0)
+                .count();
+        if (conPago > 0)
+            throw new RuntimeException("No puedes editar esta configuración: " + conPago +
+                    (conPago > 1 ? " departamentos ya registraron pagos" : " departamento ya registró un pago") +
+                    " con estos montos. Cambiar la fórmula ahora alteraría lo que ya pagaron.");
+
         Map<String, Object> antesConfig = new LinkedHashMap<>();
         antesConfig.put("tipoCalculo", config.getTipoCalculo());
         antesConfig.put("costoPorM2", config.getCostoPorM2());
@@ -259,8 +271,8 @@ public class PagosService {
         configuracionRepository.save(config);
 
         // Recalcula TODAS las cuotas de ese mes según la fórmula vigente
-        // (sea la misma de antes o una nueva, si el directivo la cambió)
-        List<CuotaMantenimiento> cuotas = cuotaRepository.findByConfiguracionId(configId);
+        // (sea la misma de antes o una nueva, si el directivo la cambió).
+        // Ya se validó arriba que ninguna tiene pagos, así que es seguro.
         for (CuotaMantenimiento cuota : cuotas) {
             Departamento depto = cuota.getDepartamento();
             BigDecimal monto;
@@ -281,11 +293,6 @@ public class PagosService {
                         : BigDecimal.ZERO;
             }
             cuota.setMontoCalculado(monto.setScale(2, java.math.RoundingMode.HALF_UP));
-            // Si ya había algún pago verificado, mantenemos el estado según el nuevo total
-            BigDecimal pagado = cuota.getMontoPagado() != null ? cuota.getMontoPagado() : BigDecimal.ZERO;
-            if (pagado.compareTo(BigDecimal.ZERO) > 0) {
-                cuota.setEstado(pagado.compareTo(cuota.getMontoCalculado()) >= 0 ? EstadoCuota.PAGADO : EstadoCuota.PARCIAL);
-            }
             cuotaRepository.save(cuota);
         }
 
@@ -637,8 +644,23 @@ public class PagosService {
                 .map(this::toPagoDetalle).collect(Collectors.toList());
     }
 
-    public List<ConfiguracionMantenimiento> listarConfiguraciones() {
-        return configuracionRepository.findAll();
+    public List<ConfiguracionResponse> listarConfiguraciones() {
+        return configuracionRepository.findAll().stream()
+                .sorted((a, b) -> a.getAnio() != b.getAnio() ? a.getAnio() - b.getAnio() : a.getMes() - b.getMes())
+                .map(c -> {
+                    ConfiguracionResponse r = new ConfiguracionResponse();
+                    r.setId(c.getId()); r.setMes(c.getMes()); r.setAnio(c.getAnio());
+                    r.setTipoCalculo(c.getTipoCalculo());
+                    r.setCostoPorM2(c.getCostoPorM2()); r.setTotalMensual(c.getTotalMensual()); r.setMontoFijo(c.getMontoFijo());
+                    r.setObservaciones(c.getObservaciones());
+                    List<CuotaMantenimiento> cuotas = cuotaRepository.findByConfiguracionId(c.getId());
+                    long conPago = cuotas.stream()
+                            .filter(cu -> cu.getMontoPagado() != null && cu.getMontoPagado().compareTo(BigDecimal.ZERO) > 0)
+                            .count();
+                    r.setTienePagos(conPago > 0);
+                    r.setDeptosConPago((int) conPago);
+                    return r;
+                }).collect(Collectors.toList());
     }
 
     // ── Helpers ───────────────────────────────────────────────────────
