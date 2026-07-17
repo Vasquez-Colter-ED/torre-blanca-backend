@@ -30,7 +30,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     // petición autenticada en este tiempo, la sesión se cierra aunque el
     // JWT todavía sea válido por sus 24h. Cualquier acción (navegar entre
     // módulos, guardar algo, etc.) cuenta como actividad y reinicia el conteo.
-    private static final long LIMITE_INACTIVIDAD_MINUTOS = 30;
+    // 3 horas: da margen para pausas largas (almuerzo, una llamada) sin
+    // cerrar la sesión de golpe, pero sigue siendo bastante menor que las
+    // 24h del JWT.
+    private static final long LIMITE_INACTIVIDAD_MINUTOS = 180;
     // No se reescribe la marca de actividad en CADA petición (sería una
     // escritura a BD por cada clic) — solo si ya pasó al menos este tiempo
     // desde la última vez que se guardó, sin afectar la precisión del límite
