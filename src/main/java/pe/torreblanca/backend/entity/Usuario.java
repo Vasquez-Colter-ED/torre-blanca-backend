@@ -34,6 +34,12 @@ public class Usuario {
     @Column(name = "session_token")
     private String sessionToken;
 
+    // Última vez que el usuario hizo una petición autenticada al backend —
+    // se usa para el límite de sesión por inactividad (se actualiza en cada
+    // request válida desde JwtAuthFilter)
+    @Column(name = "ultima_actividad")
+    private LocalDateTime ultimaActividad;
+
     @Column(name = "reset_code")
     private String resetCode;
 

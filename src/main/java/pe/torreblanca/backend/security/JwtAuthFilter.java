@@ -15,6 +15,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 @Component
@@ -23,6 +25,16 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     @Autowired private JwtUtil jwtUtil;
     @Autowired private UserDetailsServiceImpl userDetailsService;
     @Autowired private UsuarioRepository usuarioRepository;
+
+    // Límite de sesión por inactividad: si el usuario no hace ninguna
+    // petición autenticada en este tiempo, la sesión se cierra aunque el
+    // JWT todavía sea válido por sus 24h. Cualquier acción (navegar entre
+    // módulos, guardar algo, etc.) cuenta como actividad y reinicia el conteo.
+    private static final long LIMITE_INACTIVIDAD_MINUTOS = 30;
+    // No se reescribe la marca de actividad en CADA petición (sería una
+    // escritura a BD por cada clic) — solo si ya pasó al menos este tiempo
+    // desde la última vez que se guardó, sin afectar la precisión del límite
+    private static final long UMBRAL_ACTUALIZACION_SEGUNDOS = 60;
 
     // Rutas públicas que no necesitan token — el filtro las deja pasar sin validar
     private static final String[] RUTAS_PUBLICAS = {
@@ -86,6 +98,27 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             response.getWriter().write("Sesión inválida. Por favor inicia sesión nuevamente.");
             return;
+        }
+
+        Usuario usuario = usuarioOpt.get();
+        LocalDateTime ahora = LocalDateTime.now();
+
+        // Límite de sesión por inactividad
+        if (usuario.getUltimaActividad() != null &&
+                Duration.between(usuario.getUltimaActividad(), ahora).toMinutes() > LIMITE_INACTIVIDAD_MINUTOS) {
+            usuario.setSessionToken(null);
+            usuarioRepository.save(usuario);
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.getWriter().write("Tu sesión expiró por inactividad. Inicia sesión nuevamente.");
+            return;
+        }
+
+        // Esta petición cuenta como actividad — reinicia el contador (con
+        // el pequeño umbral de arriba para no escribir en la BD de más)
+        if (usuario.getUltimaActividad() == null ||
+                Duration.between(usuario.getUltimaActividad(), ahora).toSeconds() >= UMBRAL_ACTUALIZACION_SEGUNDOS) {
+            usuario.setUltimaActividad(ahora);
+            usuarioRepository.save(usuario);
         }
 
         if (SecurityContextHolder.getContext().getAuthentication() == null) {

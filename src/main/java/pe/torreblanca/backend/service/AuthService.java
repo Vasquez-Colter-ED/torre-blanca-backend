@@ -85,6 +85,7 @@ public class AuthService {
         String token = jwtUtil.generateToken(usuario.getEmail());
         String jti   = jwtUtil.getJtiFromToken(token);
         usuario.setSessionToken(jti);
+        usuario.setUltimaActividad(LocalDateTime.now());
         usuarioRepository.save(usuario);
 
         List<UsuarioRol> roles = usuarioRolRepository.findRolesActivosByUsuarioId(usuario.getId());
