@@ -120,12 +120,16 @@ public class FondoService {
             throw new RuntimeException("El tipo debe ser INGRESO o RETIRO");
         if (request.getMonto() == null || request.getMonto().compareTo(BigDecimal.ZERO) <= 0)
             throw new RuntimeException("El monto debe ser mayor a cero");
-        if (request.getConcepto() == null || request.getConcepto().trim().isEmpty())
-            throw new RuntimeException("El concepto es obligatorio");
         if (request.getFecha() == null)
             throw new RuntimeException("La fecha es obligatoria");
         if (LocalDate.parse(request.getFecha()).isAfter(LocalDate.now()))
             throw new RuntimeException("La fecha no puede ser futura");
+        // El concepto es opcional (se autocompleta si no lo llenan), pero el
+        // comprobante SÍ es obligatorio siempre — es la evidencia real de que
+        // el dinero efectivamente entró o salió, algo más importante para la
+        // auditoría que una descripción de texto libre
+        if (request.getComprobanteUrl() == null || request.getComprobanteUrl().trim().isEmpty())
+            throw new RuntimeException("La foto del comprobante es obligatoria");
 
         Usuario admin = usuarioRepository.findById(adminId)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
@@ -143,18 +147,28 @@ public class FondoService {
                         " y no admite nuevos movimientos");
         }
 
-        // Un retiro nunca puede dejar el saldo (del proyecto, o general si no
-        // pertenece a ninguno) en negativo — el fondo debe comportarse como
-        // una cuenta bancaria real, que no puede sobregirarse
+        // El retiro se valida contra el saldo REAL del fondo (la única cuenta
+        // de banco que existe), no contra el saldo propio del proyecto. Esto
+        // es a propósito: para arrancar una actividad (ej. una pollada) casi
+        // siempre hay que retirar dinero PRIMERO (comprar insumos) antes de
+        // que el proyecto haya recibido ningún ingreso propio. El fondo
+        // general le "presta" ese monto al proyecto, y el saldo del proyecto
+        // puede quedar en negativo temporalmente (le debe al fondo) hasta que
+        // entren los ingresos de la actividad. Lo único que nunca puede
+        // pasar es que el FONDO TOTAL quede en negativo, porque esa sí es
+        // plata que físicamente no existe.
         if ("RETIRO".equals(request.getTipo())) {
-            BigDecimal saldoDisponible = proyecto != null
-                    ? movimientoRepository.sumByProyectoAndTipo(proyecto.getId(), "INGRESO")
-                        .subtract(movimientoRepository.sumByProyectoAndTipo(proyecto.getId(), "RETIRO"))
-                    : calcularSaldoTotal();
+            BigDecimal saldoDisponible = calcularSaldoTotal();
             if (request.getMonto().compareTo(saldoDisponible) > 0)
-                throw new RuntimeException("El retiro (S/ " + request.getMonto() + ") supera el saldo disponible " +
-                        (proyecto != null ? "del proyecto" : "del fondo") + " (S/ " + saldoDisponible.setScale(2, java.math.RoundingMode.HALF_UP) + ")");
+                throw new RuntimeException("El retiro (S/ " + request.getMonto() + ") supera el saldo disponible del fondo (S/ " +
+                        saldoDisponible.setScale(2, java.math.RoundingMode.HALF_UP) + ")");
         }
+
+        // Si no escribieron concepto, se autocompleta con algo legible en vez
+        // de dejarlo vacío en las tablas y el Excel
+        String concepto = (request.getConcepto() == null || request.getConcepto().trim().isEmpty())
+                ? (proyecto != null ? proyecto.getNombre() : "Fondo general") + " — " + ("INGRESO".equals(request.getTipo()) ? "Ingreso" : "Retiro")
+                : request.getConcepto();
 
         // Si es RETIRO, se crea automáticamente el Gasto correspondiente
         // en el módulo de Gastos, categoría "Contingencia"
@@ -165,7 +179,7 @@ public class FondoService {
 
             Gasto gasto = new Gasto();
             gasto.setCategoria(categoria);
-            gasto.setDescripcion(proyecto != null ? proyecto.getNombre() + " — " + request.getConcepto() : request.getConcepto());
+            gasto.setDescripcion(proyecto != null ? proyecto.getNombre() + " — " + concepto : concepto);
             gasto.setMonto(request.getMonto());
             gasto.setFechaGasto(fecha);
             gasto.setMes(fecha.getMonthValue());
@@ -179,7 +193,7 @@ public class FondoService {
         m.setProyecto(proyecto);
         m.setTipo(request.getTipo());
         m.setMonto(request.getMonto());
-        m.setConcepto(request.getConcepto());
+        m.setConcepto(concepto);
         m.setFecha(LocalDate.parse(request.getFecha()));
         m.setComprobanteUrl(request.getComprobanteUrl());
         m.setGastoId(gastoId);
@@ -189,7 +203,7 @@ public class FondoService {
         Map<String, Object> datos = new LinkedHashMap<>();
         datos.put("tipo", request.getTipo());
         datos.put("monto", request.getMonto());
-        datos.put("concepto", request.getConcepto());
+        datos.put("concepto", concepto);
         if (proyecto != null) datos.put("proyecto", proyecto.getNombre());
         auditoriaService.registrar(adminId,
                 "RETIRO".equals(request.getTipo()) ? "Retiro registrado en fondo" : "Ingreso registrado en fondo",
