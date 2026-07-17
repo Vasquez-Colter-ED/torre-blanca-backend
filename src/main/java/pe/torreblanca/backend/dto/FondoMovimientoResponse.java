@@ -16,4 +16,7 @@ public class FondoMovimientoResponse {
     private String comprobanteUrl;
     private Integer gastoId;
     private String registradoPorNombre;
+    // false si el movimiento pertenece a un proyecto ya no-ACTIVO, o si ya
+    // pasó la ventana de gracia para eliminar
+    private boolean puedeEliminar;
 }

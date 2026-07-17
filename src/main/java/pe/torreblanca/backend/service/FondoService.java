@@ -27,6 +27,11 @@ public class FondoService {
 
     private static final String CATEGORIA_FONDO = "Contingencia";
 
+    // Misma ventana de gracia que Gastos: pasado este plazo, un movimiento
+    // (o el proyecto al que pertenece) ya pudo estar reflejado en un reporte
+    // mensual revisado — eliminarlo después reescribiría historia financiera cerrada
+    private static final int DIAS_LIMITE_MODIFICAR = 7;
+
     // ── Proyectos ────────────────────────────────────────────────────
 
     public List<FondoProyectoResponse> listarProyectos() {
@@ -217,6 +222,21 @@ public class FondoService {
         FondoMovimiento m = movimientoRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Movimiento no encontrado"));
 
+        // Si el movimiento pertenece a un proyecto que ya no está ACTIVO
+        // (Completado o Cancelado), no se puede eliminar — borrar un ingreso
+        // o retiro de un proyecto ya cerrado alteraría silenciosamente su
+        // historial y el saldo del fondo después de que se dio por terminado
+        if (m.getProyecto() != null && !"ACTIVO".equals(m.getProyecto().getEstado()))
+            throw new RuntimeException("Este movimiento pertenece a un proyecto ya " +
+                    ("CERRADO".equals(m.getProyecto().getEstado()) ? "completado" : "cancelado") +
+                    ". No se puede eliminar para preservar su historial.");
+
+        // Ventana de gracia — igual que en Gastos
+        long dias = java.time.temporal.ChronoUnit.DAYS.between(m.getCreatedAt(), java.time.LocalDateTime.now());
+        if (dias > DIAS_LIMITE_MODIFICAR)
+            throw new RuntimeException("Este movimiento se registró hace " + dias + " días y ya no se puede eliminar " +
+                    "(el límite es " + DIAS_LIMITE_MODIFICAR + " días, para no alterar reportes ya cerrados).");
+
         // Si tenía un Gasto vinculado (retiro), se elimina también para no dejar duplicado
         if (m.getGastoId() != null) {
             gastoRepository.findById(m.getGastoId()).ifPresent(gastoRepository::delete);
@@ -334,6 +354,10 @@ public class FondoService {
         r.setGastoId(m.getGastoId());
         if (m.getRegistradoPor() != null)
             r.setRegistradoPorNombre(m.getRegistradoPor().getNombre() + " " + m.getRegistradoPor().getApellido());
+
+        boolean proyectoNoActivo = m.getProyecto() != null && !"ACTIVO".equals(m.getProyecto().getEstado());
+        long dias = java.time.temporal.ChronoUnit.DAYS.between(m.getCreatedAt(), java.time.LocalDateTime.now());
+        r.setPuedeEliminar(!proyectoNoActivo && dias <= DIAS_LIMITE_MODIFICAR);
         return r;
     }
 }
