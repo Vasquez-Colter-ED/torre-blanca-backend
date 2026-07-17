@@ -17,4 +17,7 @@ public class FondoProyectoResponse {
     private BigDecimal totalIngresado;
     private BigDecimal totalRetirado;
     private BigDecimal saldo;
+    // true si ya tiene al menos un movimiento (ingreso o retiro) registrado
+    // — si es false, el proyecto se puede eliminar (fue creado por error o de prueba)
+    private boolean tieneMovimientos;
 }

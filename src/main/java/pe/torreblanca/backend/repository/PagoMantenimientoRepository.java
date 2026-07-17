@@ -24,4 +24,10 @@ public interface PagoMantenimientoRepository extends JpaRepository<PagoMantenimi
 
     @Query("SELECT p FROM PagoMantenimiento p ORDER BY p.createdAt DESC")
     List<PagoMantenimiento> findAllOrdenadoDesc();
+
+    // Total histórico de todo lo recaudado por mantenimiento (solo pagos ya
+    // VERIFICADOS) — se usa para calcular el saldo real del fondo, que debe
+    // reflejar el efectivo real disponible en la cuenta de la residencial
+    @Query("SELECT COALESCE(SUM(p.monto), 0) FROM PagoMantenimiento p WHERE p.estado = 'VERIFICADO'")
+    java.math.BigDecimal sumVerificadoTotal();
 }

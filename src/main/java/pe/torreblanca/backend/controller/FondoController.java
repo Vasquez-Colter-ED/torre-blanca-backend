@@ -50,6 +50,13 @@ public class FondoController {
         catch (Exception e) { return ResponseEntity.badRequest().body(e.getMessage()); }
     }
 
+    @DeleteMapping("/proyectos/{id}")
+    public ResponseEntity<?> eliminarProyecto(@PathVariable Integer id,
+                                               @RequestHeader("Authorization") String auth) {
+        try { return ResponseEntity.ok(fondoService.eliminarProyecto(id, getSolicitanteId(auth))); }
+        catch (Exception e) { return ResponseEntity.badRequest().body(e.getMessage()); }
+    }
+
     @GetMapping("/movimientos")
     public ResponseEntity<?> listarMovimientos(@RequestParam(required = false) Integer proyectoId) {
         try {

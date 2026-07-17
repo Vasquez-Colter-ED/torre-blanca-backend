@@ -15,4 +15,10 @@ public interface GastoRepository extends JpaRepository<Gasto, Integer> {
 
     @Query("SELECT COALESCE(SUM(g.monto), 0) FROM Gasto g WHERE g.mes = :mes AND g.anio = :anio")
     java.math.BigDecimal sumByMesAndAnio(Integer mes, Integer anio);
+
+    // Total histórico de TODOS los gastos registrados (todas las categorías,
+    // incluyendo "Contingencia" que se genera automáticamente desde los
+    // retiros del Fondo) — se usa para calcular el saldo real del fondo
+    @Query("SELECT COALESCE(SUM(g.monto), 0) FROM Gasto g")
+    java.math.BigDecimal sumTotal();
 }

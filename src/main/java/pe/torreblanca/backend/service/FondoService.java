@@ -22,6 +22,7 @@ public class FondoService {
     @Autowired private UsuarioRolRepository usuarioRolRepository;
     @Autowired private GastoRepository gastoRepository;
     @Autowired private CategoriaGastoRepository categoriaGastoRepository;
+    @Autowired private PagoMantenimientoRepository pagoRepository;
     @Autowired private AuditoriaService auditoriaService;
 
     private static final String CATEGORIA_FONDO = "Contingencia";
@@ -76,6 +77,30 @@ public class FondoService {
         return toProyectoResponse(guardado);
     }
 
+    // Solo se puede eliminar un proyecto si nunca se le registró ningún
+    // movimiento (ingreso o retiro) — por ejemplo si se creó de prueba o por
+    // error. Si ya tiene movimientos, borrar el proyecto dejaría huérfanos
+    // esos registros financieros, así que se bloquea para no romper el
+    // historial contable.
+    public MensajeResponse eliminarProyecto(Integer id, Integer adminId) {
+        verificarDirectivo(adminId);
+        FondoProyecto p = proyectoRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Proyecto no encontrado"));
+
+        List<FondoMovimiento> movimientos = movimientoRepository.findByProyectoId(id);
+        if (!movimientos.isEmpty())
+            throw new RuntimeException("No se puede eliminar: este proyecto ya tiene " + movimientos.size() +
+                    " movimiento" + (movimientos.size() > 1 ? "s" : "") + " registrado" + (movimientos.size() > 1 ? "s" : "") +
+                    ". Puedes cancelarlo en su lugar.");
+
+        Map<String, Object> datos = new LinkedHashMap<>();
+        datos.put("nombre", p.getNombre());
+        proyectoRepository.delete(p);
+        auditoriaService.registrar(adminId, "Proyecto de fondo eliminado", "fondo_proyectos", id, datos, null);
+
+        return new MensajeResponse("Proyecto eliminado correctamente", true);
+    }
+
     // ── Movimientos ──────────────────────────────────────────────────
 
     public List<FondoMovimientoResponse> listarMovimientosDeProyecto(Integer proyectoId) {
@@ -107,6 +132,26 @@ public class FondoService {
         if (request.getProyectoId() != null) {
             proyecto = proyectoRepository.findById(request.getProyectoId())
                     .orElseThrow(() -> new RuntimeException("Proyecto no encontrado"));
+            // Un proyecto ya completado o cancelado no debe seguir recibiendo
+            // movimientos — si hacía falta reactivarlo habría que reabrirlo
+            // explícitamente primero, no simplemente seguir agregando montos
+            if (!"ACTIVO".equals(proyecto.getEstado()))
+                throw new RuntimeException("Este proyecto ya está " +
+                        ("CERRADO".equals(proyecto.getEstado()) ? "completado" : "cancelado") +
+                        " y no admite nuevos movimientos");
+        }
+
+        // Un retiro nunca puede dejar el saldo (del proyecto, o general si no
+        // pertenece a ninguno) en negativo — el fondo debe comportarse como
+        // una cuenta bancaria real, que no puede sobregirarse
+        if ("RETIRO".equals(request.getTipo())) {
+            BigDecimal saldoDisponible = proyecto != null
+                    ? movimientoRepository.sumByProyectoAndTipo(proyecto.getId(), "INGRESO")
+                        .subtract(movimientoRepository.sumByProyectoAndTipo(proyecto.getId(), "RETIRO"))
+                    : calcularSaldoTotal();
+            if (request.getMonto().compareTo(saldoDisponible) > 0)
+                throw new RuntimeException("El retiro (S/ " + request.getMonto() + ") supera el saldo disponible " +
+                        (proyecto != null ? "del proyecto" : "del fondo") + " (S/ " + saldoDisponible.setScale(2, java.math.RoundingMode.HALF_UP) + ")");
         }
 
         // Si es RETIRO, se crea automáticamente el Gasto correspondiente
@@ -173,13 +218,34 @@ public class FondoService {
 
     // ── Resumen general ──────────────────────────────────────────────
 
+    // El saldo del fondo ya NO es solo la suma de sus propios movimientos:
+    // ahora refleja el efectivo real de la residencial, sumando todo lo
+    // recaudado en mantenimiento (módulo Pagos) y los ingresos extra propios
+    // del fondo (pollada, donaciones, el ajuste de apertura inicial que se
+    // registra como un "Ingreso" general), y restando TODOS los gastos
+    // (módulo Gastos) — los retiros del fondo ya están ahí adentro porque
+    // cada retiro genera automáticamente su propio Gasto en categoría
+    // "Contingencia", así que no se restan dos veces.
+    private BigDecimal calcularSaldoTotal() {
+        BigDecimal pagosMantenimiento = pagoRepository.sumVerificadoTotal();
+        BigDecimal ingresosFondo      = movimientoRepository.sumByTipo("INGRESO");
+        BigDecimal gastosTotal        = gastoRepository.sumTotal();
+        return pagosMantenimiento.add(ingresosFondo).subtract(gastosTotal);
+    }
+
     public FondoResumenResponse resumenGeneral() {
-        BigDecimal ingresado = movimientoRepository.sumByTipo("INGRESO");
-        BigDecimal retirado  = movimientoRepository.sumByTipo("RETIRO");
+        BigDecimal pagosMantenimiento = pagoRepository.sumVerificadoTotal();
+        BigDecimal ingresosFondo      = movimientoRepository.sumByTipo("INGRESO");
+        BigDecimal retiradoFondo      = movimientoRepository.sumByTipo("RETIRO");
+        BigDecimal gastosTotal        = gastoRepository.sumTotal();
+
         FondoResumenResponse r = new FondoResumenResponse();
-        r.setTotalIngresado(ingresado);
-        r.setTotalRetirado(retirado);
-        r.setSaldoTotal(ingresado.subtract(retirado));
+        r.setTotalPagosMantenimiento(pagosMantenimiento);
+        r.setTotalIngresosFondo(ingresosFondo);
+        r.setTotalGastos(gastosTotal);
+        r.setTotalIngresado(ingresosFondo);
+        r.setTotalRetirado(retiradoFondo);
+        r.setSaldoTotal(pagosMantenimiento.add(ingresosFondo).subtract(gastosTotal));
         r.setProyectosActivos(proyectoRepository.contarActivos());
         return r;
     }
@@ -225,6 +291,7 @@ public class FondoService {
         r.setTotalIngresado(ingresado);
         r.setTotalRetirado(retirado);
         r.setSaldo(ingresado.subtract(retirado));
+        r.setTieneMovimientos(ingresado.compareTo(BigDecimal.ZERO) > 0 || retirado.compareTo(BigDecimal.ZERO) > 0);
         return r;
     }
 
