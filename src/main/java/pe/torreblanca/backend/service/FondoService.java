@@ -124,6 +124,8 @@ public class FondoService {
             throw new RuntimeException("El concepto es obligatorio");
         if (request.getFecha() == null)
             throw new RuntimeException("La fecha es obligatoria");
+        if (LocalDate.parse(request.getFecha()).isAfter(LocalDate.now()))
+            throw new RuntimeException("La fecha no puede ser futura");
 
         Usuario admin = usuarioRepository.findById(adminId)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
@@ -231,6 +233,14 @@ public class FondoService {
         BigDecimal ingresosFondo      = movimientoRepository.sumByTipo("INGRESO");
         BigDecimal gastosTotal        = gastoRepository.sumTotal();
         return pagosMantenimiento.add(ingresosFondo).subtract(gastosTotal);
+    }
+
+    // Expuesto para que otros módulos (como Gastos) puedan validar que un
+    // nuevo gasto no deje el fondo en negativo, sin importar por qué módulo
+    // se registre el egreso — el fondo debe comportarse como una única
+    // cuenta bancaria real.
+    public BigDecimal calcularSaldoDisponible() {
+        return calcularSaldoTotal();
     }
 
     public FondoResumenResponse resumenGeneral() {

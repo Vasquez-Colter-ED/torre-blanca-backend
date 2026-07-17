@@ -19,4 +19,9 @@ public interface FondoMovimientoRepository extends JpaRepository<FondoMovimiento
 
     @Query("SELECT COALESCE(SUM(m.monto),0) FROM FondoMovimiento m WHERE m.tipo = :tipo")
     BigDecimal sumByTipo(String tipo);
+
+    // Para proteger la integridad del vínculo retiro↔gasto: si un Gasto fue
+    // creado automáticamente por un retiro del Fondo, no debe poder editarse
+    // ni eliminarse directamente desde el módulo de Gastos sin pasar por acá
+    java.util.Optional<FondoMovimiento> findByGastoId(Integer gastoId);
 }

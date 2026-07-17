@@ -14,4 +14,7 @@ public class GastoResponse {
     private Integer anio;
     private String comprobanteUrl;
     private String registradoPorNombre;
+    // false si ya pasó la ventana de gracia para editar/eliminar, o si viene
+    // de un retiro del Fondo de Contingencia (ese se gestiona desde Fondo)
+    private boolean puedeEliminar;
 }
